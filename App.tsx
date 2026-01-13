@@ -33,7 +33,7 @@ const App: React.FC = () => {
   );
 
   const [printers, setPrinters] = useState<Printer[]>([
-    { id: '1', name: 'Impressora Cozinha', type: 'COZINHA', ip: '192.168.1.50', status: 'ONLINE' },
+    { id: '1', name: 'Impressora Cozinha', type: 'COZINHA', ip: '192.168.1.50', status: 'ONLINE', isDefault: true },
     { id: '2', name: 'Impressora Caixa', type: 'CAIXA', ip: '192.168.1.51', status: 'ONLINE' }
   ]);
 
@@ -41,6 +41,8 @@ const App: React.FC = () => {
     { id: '1', provider: 'iFood', type: 'IFOOD', status: 'CONNECTED' },
     { id: '2', provider: 'Sefaz (NFC-e)', type: 'FISCAL', status: 'CONNECTED' }
   ]);
+
+  const generateComandaId = () => Math.floor(1000 + Math.random() * 9000).toString();
 
   const addOrderItem = (tableId: number, product: Product, quantity: number) => {
     setTables(prev => prev.map(t => {
@@ -57,6 +59,7 @@ const App: React.FC = () => {
         };
         return {
           ...t,
+          comandaId: t.comandaId || generateComandaId(),
           status: TableStatus.OCCUPIED,
           customerCount: t.customerCount || 1,
           orderItems: [...t.orderItems, newItem],
@@ -77,6 +80,7 @@ const App: React.FC = () => {
     const newTransaction: Transaction = {
       id: `tr-${Date.now()}`,
       tableId,
+      comandaId: table.comandaId,
       amount: totalAmount,
       amountPaid,
       change,
@@ -106,6 +110,7 @@ const App: React.FC = () => {
           ...t,
           orderItems: remainingItems,
           status: remainingItems.length === 0 ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
+          comandaId: remainingItems.length === 0 ? undefined : t.comandaId,
           customerCount: remainingItems.length === 0 ? 0 : t.customerCount
         };
       }
@@ -119,11 +124,12 @@ const App: React.FC = () => {
 
     setTables(prev => prev.map(t => {
       if (t.id === fromTableId) {
-        return { ...t, orderItems: [], status: TableStatus.AVAILABLE, customerCount: 0 };
+        return { ...t, orderItems: [], status: TableStatus.AVAILABLE, comandaId: undefined, customerCount: 0 };
       }
       if (t.id === toTableId) {
         return { 
           ...t, 
+          comandaId: t.comandaId || fromTable.comandaId,
           orderItems: [...t.orderItems, ...fromTable.orderItems], 
           status: TableStatus.OCCUPIED,
           customerCount: t.customerCount || fromTable.customerCount

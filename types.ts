@@ -44,6 +44,7 @@ export interface OrderItem {
 
 export interface Table {
   id: number;
+  comandaId?: string;
   status: TableStatus;
   orderItems: OrderItem[];
   customerCount: number;
@@ -53,6 +54,7 @@ export interface Table {
 export interface Transaction {
   id: string;
   tableId: number;
+  comandaId?: string;
   amount: number;
   amountPaid: number;
   change: number;
@@ -77,6 +79,7 @@ export interface Printer {
   type: 'COZINHA' | 'CAIXA' | 'BAR';
   ip: string;
   status: 'ONLINE' | 'OFFLINE';
+  isDefault?: boolean;
 }
 
 export interface Connection {
@@ -84,6 +87,7 @@ export interface Connection {
   provider: string;
   type: 'IFOOD' | 'RAPPI' | 'FISCAL' | 'BANK';
   status: 'CONNECTED' | 'DISCONNECTED';
+  apiKey?: string;
 }
 
 export enum AppSection {
