@@ -8,26 +8,61 @@ import {
   Users, 
   FileCode2,
   Settings as SettingsIcon,
-  Printer as PrinterIcon,
-  Wifi
+  UserCog
 } from 'lucide-react';
-import { AppSection } from './types.ts';
+import { AppSection, UserRole, User } from './types.ts';
 
 export const COLORS = {
-  primary: '#dc2626', // Red-600
-  secondary: '#ffffff', // White
+  primary: '#dc2626',
+  secondary: '#ffffff',
   background: '#f9fafb',
   text: '#111827',
-  accent: '#991b1b' // Red-800
+  accent: '#991b1b'
 };
+
+export const ROLE_PERMISSIONS: Record<UserRole, AppSection[]> = {
+  [UserRole.ADMIN]: [
+    AppSection.DASHBOARD, 
+    AppSection.POS, 
+    AppSection.KDS, 
+    AppSection.INVENTORY, 
+    AppSection.CRM, 
+    AppSection.SETTINGS, 
+    AppSection.ARCHITECT,
+    AppSection.USERS
+  ],
+  [UserRole.MANAGER]: [
+    AppSection.DASHBOARD, 
+    AppSection.POS, 
+    AppSection.KDS, 
+    AppSection.INVENTORY, 
+    AppSection.CRM,
+    AppSection.USERS
+  ],
+  [UserRole.WAITER]: [
+    AppSection.POS
+  ],
+  [UserRole.CHEF]: [
+    AppSection.KDS,
+    AppSection.INVENTORY
+  ]
+};
+
+export const INITIAL_USERS: User[] = [
+  { id: '1', name: 'Admin Lagoon', role: UserRole.ADMIN, pin: '1234' },
+  { id: '2', name: 'Carlos (Gerente)', role: UserRole.MANAGER, pin: '0000' },
+  { id: '3', name: 'João (Garçom)', role: UserRole.WAITER, pin: '1111' },
+  { id: '4', name: 'Chef Ricardo', role: UserRole.CHEF, pin: '2222' }
+];
 
 export const NAVIGATION_ITEMS = [
   { id: AppSection.DASHBOARD, label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-  { id: AppSection.POS, label: 'Frente de Caixa (PDV)', icon: <UtensilsCrossed size={20} /> },
-  { id: AppSection.KDS, label: 'Cozinha (KDS)', icon: <MonitorPlay size={20} /> },
-  { id: AppSection.INVENTORY, label: 'Estoque & Cardápio', icon: <Package size={20} /> },
-  { id: AppSection.CRM, label: 'Inteligência & CRM', icon: <Users size={20} /> },
-  { id: AppSection.SETTINGS, label: 'Configurações', icon: <SettingsIcon size={20} /> },
+  { id: AppSection.POS, label: 'Ponto de Venda', icon: <UtensilsCrossed size={20} /> },
+  { id: AppSection.KDS, label: 'Cozinha', icon: <MonitorPlay size={20} /> },
+  { id: AppSection.INVENTORY, label: 'Estoque', icon: <Package size={20} /> },
+  { id: AppSection.CRM, label: 'CRM', icon: <Users size={20} /> },
+  { id: AppSection.USERS, label: 'Equipe', icon: <UserCog size={20} /> },
+  { id: AppSection.SETTINGS, label: 'Ajustes', icon: <SettingsIcon size={20} /> },
   { id: AppSection.ARCHITECT, label: 'Arquitetura', icon: <FileCode2 size={20} /> },
 ];
 

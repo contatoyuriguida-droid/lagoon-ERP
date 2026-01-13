@@ -21,6 +21,21 @@ export enum PaymentMethod {
   PIX = 'PIX'
 }
 
+export enum UserRole {
+  ADMIN = 'ADMIN',
+  MANAGER = 'MANAGER',
+  WAITER = 'WAITER',
+  CHEF = 'CHEF'
+}
+
+export interface User {
+  id: string;
+  name: string;
+  role: UserRole;
+  pin: string;
+  avatar?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -97,5 +112,6 @@ export enum AppSection {
   INVENTORY = 'INVENTORY',
   CRM = 'CRM',
   SETTINGS = 'SETTINGS',
-  ARCHITECT = 'ARCHITECT'
+  ARCHITECT = 'ARCHITECT',
+  USERS = 'USERS'
 }
