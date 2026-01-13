@@ -1,0 +1,7 @@
+{
+  "name": "Lagoon GastroBar ERP",
+  "description": "Um sistema completo de gestão de restaurantes (ERP/POS) com gerenciamento de mesas, KDS, controle de estoque inteligente e painéis executivos com uma estética em vermelho e branco.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
