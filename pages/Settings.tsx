@@ -35,81 +35,64 @@ const Settings: React.FC<SettingsProps> = ({ printers, setPrinters, connections,
   };
 
   return (
-    <div className="space-y-12 pb-24 max-w-6xl mx-auto">
-      {/* Seção de Periféricos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+    <div className="space-y-8 max-w-5xl mx-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        <section className="bg-white rounded-[48px] p-10 border border-gray-100 shadow-2xl shadow-gray-100/30 space-y-8 relative overflow-hidden group">
-           <div className="flex items-center justify-between relative z-10">
-              <div className="flex items-center gap-5">
-                 <div className="p-6 bg-red-600 text-white rounded-[32px] shadow-xl shadow-red-100 group-hover:rotate-6 transition-transform duration-500"><PrinterIcon size={32} /></div>
+        {/* Terminal Section */}
+        <section className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm space-y-6">
+           <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                 <div className="p-3 bg-red-600 text-white rounded-xl"><PrinterIcon size={20} /></div>
                  <div>
-                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">Rede de Impressão</h2>
-                    <p className="text-sm text-gray-400 font-bold uppercase tracking-widest text-[10px]">Configurar Terminais Térmicos</p>
+                    <h2 className="text-base font-bold text-gray-900 leading-tight">Terminais de Impressão</h2>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Rede Local (TCP/IP)</p>
                  </div>
               </div>
-              <button 
-                onClick={() => setShowPrinterModal(true)}
-                className="w-14 h-14 bg-red-50 text-red-600 rounded-[24px] flex items-center justify-center hover:bg-red-600 hover:text-white transition-all active:scale-90"
-              >
-                <Plus size={28} />
-              </button>
+              <button onClick={() => setShowPrinterModal(true)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all"><Plus size={18} /></button>
            </div>
 
-           <div className="space-y-4 relative z-10">
-              {printers.length > 0 ? printers.map(p => (
-                <div key={p.id} className="p-6 bg-gray-50 rounded-[32px] flex items-center justify-between border-2 border-transparent hover:border-red-100 transition-all group/item">
-                   <div className="flex items-center gap-5">
-                      <div className={`w-4 h-4 rounded-full border-4 border-white shadow-sm ${p.status === 'ONLINE' ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
+           <div className="space-y-3">
+              {printers.map(p => (
+                <div key={p.id} className="p-4 bg-gray-50 rounded-xl flex items-center justify-between border border-transparent hover:border-red-200 group">
+                   <div className="flex items-center gap-4">
+                      <div className={`w-2.5 h-2.5 rounded-full ${p.status === 'ONLINE' ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
                       <div>
-                         <p className="font-black text-gray-800 text-lg leading-tight">{p.name}</p>
-                         <p className="text-[10px] text-gray-400 font-black tracking-[0.2em] uppercase">{p.type} • IP: {p.ip}</p>
+                         <p className="font-bold text-gray-800 text-sm leading-tight">{p.name}</p>
+                         <p className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">IP: {p.ip} • {p.type}</p>
                       </div>
                    </div>
-                   <div className="flex items-center gap-2 opacity-0 group-hover/item:opacity-100 transition-opacity">
-                      <button onClick={() => removePrinter(p.id)} className="p-3 text-gray-300 hover:text-red-600 transition-colors"><Trash2 size={20} /></button>
-                      <button className="px-5 py-2.5 bg-white text-gray-400 text-[10px] font-black rounded-xl border border-gray-100 hover:border-red-600 hover:text-red-600 shadow-sm uppercase tracking-widest">Testar</button>
-                   </div>
+                   <button onClick={() => removePrinter(p.id)} className="opacity-0 group-hover:opacity-100 p-2 text-gray-400 hover:text-red-600 transition-all"><Trash2 size={16} /></button>
                 </div>
-              )) : (
-                <div className="py-10 text-center text-gray-300 space-y-2 opacity-50">
-                  <PrinterIcon size={48} className="mx-auto mb-2" />
-                  <p className="font-black text-sm uppercase tracking-widest">Nenhuma Impressora</p>
-                </div>
-              )}
+              ))}
            </div>
         </section>
 
-        <section className="bg-white rounded-[48px] p-10 border border-gray-100 shadow-2xl shadow-gray-100/30 space-y-8 relative overflow-hidden group">
-           <div className="flex items-center justify-between relative z-10">
-              <div className="flex items-center gap-5">
-                 <div className="p-6 bg-red-50 text-red-600 rounded-[32px] shadow-lg group-hover:-rotate-6 transition-transform duration-500"><Wifi size={32} /></div>
+        {/* Connections Section */}
+        <section className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm space-y-6">
+           <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                 <div className="p-3 bg-red-50 text-red-600 rounded-xl"><Wifi size={20} /></div>
                  <div>
-                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">Integrações Cloud</h2>
-                    <p className="text-sm text-gray-400 font-bold uppercase tracking-widest text-[10px]">IFood, Rappi e Fiscal</p>
+                    <h2 className="text-base font-bold text-gray-900 leading-tight">Integrações Digitais</h2>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Delivery & Fiscal</p>
                  </div>
               </div>
-              <button 
-                onClick={() => setShowConnectionModal(true)}
-                className="w-14 h-14 bg-red-600 text-white rounded-[24px] flex items-center justify-center hover:bg-red-700 transition-all active:scale-90 shadow-xl shadow-red-100"
-              >
-                <Plus size={28} />
-              </button>
+              <button onClick={() => setShowConnectionModal(true)} className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-sm"><Plus size={18} /></button>
            </div>
 
-           <div className="space-y-4 relative z-10">
+           <div className="space-y-3">
               {connections.map(c => (
-                <div key={c.id} className="p-6 bg-gray-50 rounded-[32px] flex items-center justify-between border-2 border-transparent hover:border-red-100 transition-all">
-                   <div className="flex items-center gap-5">
-                      <div className={`p-4 rounded-2xl shadow-sm bg-white ${c.status === 'CONNECTED' ? 'text-red-600' : 'text-gray-300'}`}>
-                         {c.type === 'IFOOD' ? <Zap size={24} /> : <ShieldCheck size={24} />}
+                <div key={c.id} className="p-4 bg-gray-50 rounded-xl flex items-center justify-between border border-transparent hover:border-red-200">
+                   <div className="flex items-center gap-4">
+                      <div className={`p-2 rounded-lg bg-white border border-gray-100 ${c.status === 'CONNECTED' ? 'text-red-600' : 'text-gray-300'}`}>
+                         {c.type === 'IFOOD' ? <Zap size={16} /> : <ShieldCheck size={16} />}
                       </div>
                       <div>
-                         <p className="font-black text-gray-800 text-lg leading-tight">{c.provider}</p>
-                         <p className="text-[10px] text-gray-400 font-black tracking-widest uppercase">{c.type}</p>
+                         <p className="font-bold text-gray-800 text-sm leading-tight">{c.provider}</p>
+                         <p className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">{c.type}</p>
                       </div>
                    </div>
-                   <div className={`px-4 py-2 rounded-2xl text-[10px] font-black border-2 ${c.status === 'CONNECTED' ? 'bg-green-50 border-green-100 text-green-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                   <div className={`px-2 py-1 rounded text-[9px] font-bold border ${c.status === 'CONNECTED' ? 'bg-green-50 border-green-100 text-green-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
                       {c.status === 'CONNECTED' ? 'ATIVA' : 'FALHA'}
                    </div>
                 </div>
@@ -118,62 +101,60 @@ const Settings: React.FC<SettingsProps> = ({ printers, setPrinters, connections,
         </section>
       </div>
 
-      {/* Printer Modal */}
+      {/* Printer Modal Refined */}
       {showPrinterModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-xl p-6">
-           <div className="bg-white rounded-[60px] w-full max-w-md p-14 shadow-2xl animate-in zoom-in-95 duration-300 border-t-[12px] border-red-600">
-              <h3 className="text-4xl font-black text-gray-900 mb-2 tracking-tighter">Instalar Impressora</h3>
-              <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mb-10 opacity-70">Cadastro de ponto de impressão</p>
-              
-              <div className="space-y-8">
-                 <div className="space-y-2">
-                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest px-1">Nome de Exibição</label>
-                    <input type="text" value={newPrinter.name} onChange={e => setNewPrinter({...newPrinter, name: e.target.value})} placeholder="Ex: Térmica Cozinha" className="w-full p-6 bg-gray-50 rounded-[28px] border-none outline-none focus:ring-4 focus:ring-red-100 font-black text-xl tracking-tight" />
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+           <div className="bg-white rounded-2xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95 duration-200">
+              <h3 className="text-xl font-bold text-gray-900 mb-6">Cadastrar Impressora</h3>
+              <div className="space-y-4">
+                 <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Nome Amigável</label>
+                    <input type="text" value={newPrinter.name} onChange={e => setNewPrinter({...newPrinter, name: e.target.value})} placeholder="Cozinha Central" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-red-500 outline-none" />
                  </div>
-                 <div className="space-y-2">
-                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest px-1">Endereço IP (LAN)</label>
-                    <input type="text" value={newPrinter.ip} onChange={e => setNewPrinter({...newPrinter, ip: e.target.value})} placeholder="192.168.1.XX" className="w-full p-6 bg-gray-50 rounded-[28px] border-none outline-none focus:ring-4 focus:ring-red-100 font-mono text-xl text-red-600 font-black" />
+                 <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">IP na Rede Local</label>
+                    <input type="text" value={newPrinter.ip} onChange={e => setNewPrinter({...newPrinter, ip: e.target.value})} placeholder="192.168.1.100" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-red-500 outline-none font-mono" />
                  </div>
-                 <div className="flex gap-3">
+                 <div className="flex gap-2">
                     {['COZINHA', 'CAIXA', 'BAR'].map(type => (
-                      <button key={type} onClick={() => setNewPrinter({...newPrinter, type: type as any})} className={`flex-1 py-4 rounded-2xl text-[10px] font-black transition-all uppercase tracking-widest ${newPrinter.type === type ? 'bg-red-600 text-white shadow-xl shadow-red-100' : 'bg-gray-50 text-gray-400 hover:bg-red-50'}`}>{type}</button>
+                      <button key={type} onClick={() => setNewPrinter({...newPrinter, type: type as any})} className={`flex-1 py-2 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all border ${newPrinter.type === type ? 'bg-red-600 text-white border-red-600 shadow-md' : 'bg-white text-gray-400 border-gray-200 hover:border-red-300'}`}>{type}</button>
                     ))}
                  </div>
               </div>
-              <div className="flex gap-4 mt-12">
-                 <button onClick={addPrinter} className="flex-1 py-6 bg-red-600 text-white font-black rounded-[28px] shadow-2xl shadow-red-100 hover:bg-red-700 transition-all uppercase tracking-[0.2em] active:scale-95">Salvar</button>
-                 <button onClick={() => setShowPrinterModal(false)} className="flex-1 py-6 bg-gray-50 text-gray-400 font-black rounded-[28px] hover:bg-gray-100 transition-all uppercase tracking-[0.2em]">Sair</button>
+              <div className="flex gap-3 mt-8">
+                 <button onClick={addPrinter} className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl shadow-md hover:bg-red-700 active:scale-95 transition-all text-xs uppercase tracking-widest">Salvar</button>
+                 <button onClick={() => setShowPrinterModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-500 font-bold rounded-xl text-xs uppercase tracking-widest">Cancelar</button>
               </div>
            </div>
         </div>
       )}
 
-      {/* Connection Modal */}
+      {/* Connection Modal Refined */}
       {showConnectionModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-xl p-6">
-           <div className="bg-white rounded-[60px] w-full max-w-md p-14 shadow-2xl animate-in zoom-in-95 duration-300 border-t-[12px] border-red-600">
-              <h3 className="text-4xl font-black text-gray-900 mb-10 tracking-tighter">API & Integração</h3>
-              <div className="space-y-8">
-                 <div className="space-y-2">
-                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest px-1">Provedor</label>
-                    <input type="text" value={newConn.provider} onChange={e => setNewConn({...newConn, provider: e.target.value})} placeholder="Ex: iFood Marketplace" className="w-full p-6 bg-gray-50 rounded-[28px] border-none outline-none focus:ring-4 focus:ring-red-100 font-black text-xl" />
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+           <div className="bg-white rounded-2xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95 duration-200">
+              <h3 className="text-xl font-bold text-gray-900 mb-6">Nova Integração</h3>
+              <div className="space-y-4">
+                 <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Provedor</label>
+                    <input type="text" value={newConn.provider} onChange={e => setNewConn({...newConn, provider: e.target.value})} placeholder="iFood Marketplace" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 text-sm outline-none focus:ring-2 focus:ring-red-500" />
                  </div>
-                 <div className="space-y-2">
-                    <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest px-1">Token de Acesso</label>
+                 <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase">Chave de API / Token</label>
                     <div className="relative">
-                      <Key className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={24} />
-                      <input type="password" placeholder="••••••••••••••••" className="w-full pl-16 pr-6 py-6 bg-gray-50 rounded-[28px] border-none outline-none focus:ring-4 focus:ring-red-100 font-mono" />
+                      <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+                      <input type="password" placeholder="••••••••••••••••" className="w-full pl-10 pr-4 py-3 bg-gray-50 rounded-xl border border-gray-200 text-sm outline-none" />
                     </div>
                  </div>
-                 <div className="grid grid-cols-2 gap-3">
+                 <div className="grid grid-cols-2 gap-2">
                     {['IFOOD', 'FISCAL', 'RAPPI', 'BANK'].map(type => (
-                      <button key={type} onClick={() => setNewConn({...newConn, type: type as any})} className={`py-4 rounded-2xl text-[10px] font-black transition-all uppercase tracking-widest ${newConn.type === type ? 'bg-red-600 text-white shadow-xl shadow-red-100' : 'bg-gray-50 text-gray-400'}`}>{type}</button>
+                      <button key={type} onClick={() => setNewConn({...newConn, type: type as any})} className={`py-2 rounded-lg text-[9px] font-bold uppercase transition-all border ${newConn.type === type ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-400 border-gray-200'}`}>{type}</button>
                     ))}
                  </div>
               </div>
-              <div className="flex gap-4 mt-12">
-                 <button onClick={addConnection} className="flex-1 py-6 bg-red-600 text-white font-black rounded-[28px] shadow-2xl shadow-red-100 hover:bg-red-700 transition-all uppercase tracking-[0.2em]">Vincular</button>
-                 <button onClick={() => setShowConnectionModal(false)} className="flex-1 py-6 bg-gray-50 text-gray-400 font-black rounded-[28px] hover:bg-gray-100 transition-all uppercase tracking-[0.2em]">Desistir</button>
+              <div className="flex gap-3 mt-8">
+                 <button onClick={addConnection} className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl shadow-md text-xs uppercase tracking-widest">Vincular</button>
+                 <button onClick={() => setShowConnectionModal(false)} className="flex-1 py-3 bg-gray-100 text-gray-500 font-bold rounded-xl text-xs uppercase tracking-widest">Sair</button>
               </div>
            </div>
         </div>

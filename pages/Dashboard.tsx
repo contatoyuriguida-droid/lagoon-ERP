@@ -16,8 +16,8 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) => {
     const itemsSold = products.reduce((sum, p) => sum + (p.salesVolume || 0), 0);
     
     return {
-      sales: `R$ ${totalSales.toFixed(2)}`,
-      ticket: `R$ ${avgTicket.toFixed(2)}`,
+      sales: `R$ ${totalSales.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      ticket: `R$ ${avgTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
       volume: itemsSold,
       count: transactions.length
     };
@@ -35,70 +35,72 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) => {
   }, []);
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
-      {/* Top Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard label="Faturamento Hoje" value={metrics.sales} change="+12.5%" isPositive={true} icon={<DollarSign size={20} />} />
-        <MetricCard label="Ticket Médio" value={metrics.ticket} change="+5.2%" isPositive={true} icon={<TrendingUp size={20} />} />
-        <MetricCard label="Comandas Pagas" value={metrics.count} change="Tempo Real" isPositive={true} icon={<Clock size={20} />} />
-        <MetricCard label="Giro de Estoque" value={metrics.volume} change="Alto" isPositive={true} icon={<Zap size={20} />} />
+    <div className="space-y-6">
+      {/* Top Metrics Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
+        <MetricCard label="Faturamento Hoje" value={metrics.sales} change="+12%" isPositive={true} icon={<DollarSign size={18} />} />
+        <MetricCard label="Ticket Médio" value={metrics.ticket} change="+5%" isPositive={true} icon={<TrendingUp size={18} />} />
+        <MetricCard label="Vendas" value={metrics.count} change="Live" isPositive={true} icon={<Clock size={18} />} />
+        <MetricCard label="Giro Estoque" value={metrics.volume} change="Alto" isPositive={true} icon={<Zap size={18} />} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Chart */}
-        <div className="lg:col-span-2 bg-white p-8 rounded-[32px] border border-gray-100 shadow-sm">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Chart Container */}
+        <div className="lg:col-span-2 bg-white p-5 lg:p-8 rounded-2xl border border-gray-100 shadow-sm">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h2 className="text-xl font-black text-gray-900">Performance de Vendas</h2>
-              <p className="text-sm text-gray-400">Fluxo financeiro consolidado por hora</p>
+              <h2 className="text-lg font-bold text-gray-900">Performance de Vendas</h2>
+              <p className="text-xs text-gray-400">Fluxo consolidado por hora</p>
             </div>
             <div className="flex gap-2">
-              <span className="px-3 py-1 bg-red-50 text-red-600 rounded-full text-[10px] font-black uppercase">Live</span>
+              <span className="px-2 py-1 bg-red-50 text-red-600 rounded text-[9px] font-bold uppercase border border-red-100 tracking-wider">Tempo Real</span>
             </div>
           </div>
-          <div className="h-72">
+          <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#dc2626" stopOpacity={0.15}/>
+                    <stop offset="5%" stopColor="#dc2626" stopOpacity={0.1}/>
                     <stop offset="95%" stopColor="#dc2626" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 600, fill: '#9ca3af'}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 600, fill: '#9ca3af'}} />
-                <Tooltip />
-                <Area type="monotone" dataKey="value" stroke="#dc2626" strokeWidth={4} fillOpacity={1} fill="url(#colorValue)" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#9ca3af'}} />
+                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#9ca3af'}} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                  itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                />
+                <Area type="monotone" dataKey="value" stroke="#dc2626" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Device Status Sidebar */}
+        {/* Sidebar Widgets */}
         <div className="space-y-6">
-          <div className="bg-white p-8 rounded-[32px] border border-gray-100 shadow-sm">
-            <h2 className="font-black text-gray-900 mb-6 flex items-center gap-2">
-              <ShieldCheck className="text-red-600" size={20} /> Status do Sistema
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <h2 className="font-bold text-sm text-gray-900 mb-6 flex items-center gap-2">
+              <ShieldCheck className="text-red-600" size={16} /> Status Operacional
             </h2>
             <div className="space-y-4">
-              <StatusRow label="Servidor Cloud" status="Online" icon={<Wifi size={16} />} color="text-green-500" />
-              <StatusRow label="Cozinha (Term." status="Ativo" icon={<Printer size={16} />} color="text-green-500" />
-              <StatusRow label="SAT / NFC-e" status="Homolog." icon={<Zap size={16} />} color="text-red-500" />
+              <StatusRow label="Servidor Cloud" status="Online" icon={<Wifi size={14} />} color="text-green-500" />
+              <StatusRow label="Cozinha (KDS)" status="Ativo" icon={<Printer size={14} />} color="text-green-500" />
+              <StatusRow label="Fiscal SAT" status="Sincron." icon={<Zap size={14} />} color="text-red-500" />
             </div>
-            <button className="w-full mt-6 py-3 bg-gray-50 text-gray-400 text-[10px] font-black uppercase rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors">Ver Configurações</button>
           </div>
 
-          <div className="bg-red-600 p-8 rounded-[32px] shadow-xl shadow-red-100 text-white relative overflow-hidden group">
+          <div className="bg-red-600 p-6 rounded-2xl shadow-lg shadow-red-100 text-white relative overflow-hidden group">
             <div className="relative z-10">
-              <h3 className="font-black text-xl mb-1">Top Item</h3>
-              <p className="text-red-100 text-xs font-bold uppercase mb-4 opacity-80">Mais vendido hoje</p>
+              <p className="text-red-100 text-[9px] font-bold uppercase tracking-widest mb-1 opacity-80">Prato Mais Vendido</p>
+              <h3 className="font-bold text-xl mb-3">Lagoon Burger</h3>
               <div className="flex items-center justify-between">
-                <span className="text-2xl font-black">Lagoon Burger</span>
-                <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-black">124 unid.</span>
+                <span className="text-xs font-medium opacity-90">Meta atingida</span>
+                <span className="bg-white/20 px-2.5 py-1 rounded-lg text-[10px] font-bold">124 unid.</span>
               </div>
             </div>
-            <TrendingUp size={120} className="absolute -right-8 -bottom-8 opacity-10 group-hover:scale-110 transition-transform duration-700" />
+            <TrendingUp size={80} className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform" />
           </div>
         </div>
       </div>
@@ -107,22 +109,22 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products }) => {
 };
 
 const MetricCard = ({ label, value, change, isPositive, icon }: any) => (
-  <div className="bg-white p-7 rounded-[28px] border border-gray-100 shadow-sm group hover:border-red-500 transition-all cursor-default">
-    <div className="flex items-center justify-between mb-5">
-      <div className="p-3 bg-red-50 text-red-600 rounded-2xl group-hover:bg-red-600 group-hover:text-white transition-colors">{icon}</div>
-      <div className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${isPositive ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{change}</div>
+  <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm group hover:border-red-400 transition-all">
+    <div className="flex items-center justify-between mb-4">
+      <div className="p-2.5 bg-red-50 text-red-600 rounded-xl group-hover:bg-red-600 group-hover:text-white transition-colors">{icon}</div>
+      <div className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-md ${isPositive ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{change}</div>
     </div>
-    <p className="text-gray-400 text-xs font-black uppercase tracking-widest">{label}</p>
-    <p className="text-3xl font-black text-gray-900 mt-2 tracking-tighter">{value}</p>
+    <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider">{label}</p>
+    <p className="text-xl font-bold text-gray-900 mt-1">{value}</p>
   </div>
 );
 
 const StatusRow = ({ label, status, icon, color }: any) => (
-  <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-    <div className="flex items-center gap-3 text-gray-500 font-bold text-xs uppercase">
+  <div className="flex items-center justify-between py-1.5">
+    <div className="flex items-center gap-3 text-gray-500 font-semibold text-[11px] uppercase tracking-wide">
       {icon} <span>{label}</span>
     </div>
-    <span className={`${color} text-[10px] font-black uppercase tracking-widest`}>{status}</span>
+    <span className={`${color} text-[10px] font-bold uppercase tracking-wider`}>{status}</span>
   </div>
 );
 

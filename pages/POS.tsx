@@ -18,7 +18,6 @@ const POS: React.FC<POSProps> = ({ tables, setTables, products, onAddItems, onFi
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
   const [isAddingItems, setIsAddingItems] = useState(false);
   const [isClosingBill, setIsClosingBill] = useState(false);
-  const [payingItems, setPayingItems] = useState<string[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [amountReceived, setAmountReceived] = useState<string>("");
   const [transferModal, setTransferModal] = useState<{ isOpen: boolean; targetTableId: number | null }>({ isOpen: false, targetTableId: null });
@@ -27,9 +26,8 @@ const POS: React.FC<POSProps> = ({ tables, setTables, products, onAddItems, onFi
 
   const totalBill = useMemo(() => {
     if (!currentTable) return 0;
-    const itemsToSum = payingItems.length > 0 ? currentTable.orderItems.filter(i => payingItems.includes(i.id)) : currentTable.orderItems;
-    return itemsToSum.reduce((s, i) => s + (i.price * i.quantity), 0);
-  }, [currentTable, payingItems]);
+    return currentTable.orderItems.reduce((s, i) => s + (i.price * i.quantity), 0);
+  }, [currentTable]);
 
   const changeValue = useMemo(() => {
     const received = parseFloat(amountReceived) || 0;
@@ -46,7 +44,6 @@ const POS: React.FC<POSProps> = ({ tables, setTables, products, onAddItems, onFi
 
   const handleOpenTable = (table: Table) => {
     setSelectedTable(table);
-    setPayingItems([]);
     setIsClosingBill(false);
     setIsAddingItems(false);
     setPaymentMethod(null);
@@ -58,79 +55,56 @@ const POS: React.FC<POSProps> = ({ tables, setTables, products, onAddItems, onFi
     onAddItems(currentTable.id, p, 1);
   };
 
-  const addNewTable = () => {
-    const nextId = tables.length + 1;
-    const newTable: Table = {
-      id: nextId,
-      status: TableStatus.AVAILABLE,
-      orderItems: [],
-      customerCount: 0,
-      lastUpdate: Date.now()
-    };
-    setTables([...tables, newTable]);
-  };
-
   const handleFinalize = () => {
     if (!currentTable || !paymentMethod) return;
-    const itemIds = payingItems.length > 0 ? payingItems : currentTable.orderItems.map(i => i.id);
+    const itemIds = currentTable.orderItems.map(i => i.id);
     const finalReceived = paymentMethod === PaymentMethod.CASH ? parseFloat(amountReceived) : totalBill;
     
-    onFinalize(
-      currentTable.id, 
-      itemIds, 
-      paymentMethod, 
-      finalReceived, 
-      changeValue,
-      undefined
-    );
+    onFinalize(currentTable.id, itemIds, paymentMethod, finalReceived, changeValue);
     setSelectedTable(null);
   };
 
   return (
-    <div className="h-full flex flex-col gap-6 relative max-w-[1400px] mx-auto">
-      {/* PDV Header & Tabs */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="space-y-6">
+      {/* Header Tabs Compact */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-200">
           <button 
             onClick={() => setActiveTab('TABLES')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'TABLES' ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'text-gray-400 hover:text-red-600'}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition-all ${activeTab === 'TABLES' ? 'bg-red-600 text-white shadow-sm' : 'text-gray-400 hover:text-red-600'}`}
           >
-            <LayoutGrid size={16} /> Mapa de Mesas
+            <LayoutGrid size={14} /> Mapa de Mesas
           </button>
           <button 
             onClick={() => setActiveTab('COMANDAS')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'COMANDAS' ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'text-gray-400 hover:text-red-600'}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition-all ${activeTab === 'COMANDAS' ? 'bg-red-600 text-white shadow-sm' : 'text-gray-400 hover:text-red-600'}`}
           >
-            <List size={16} /> Comandas Ativas
+            <List size={14} /> Comandas Ativas
           </button>
         </div>
         <button 
-          onClick={addNewTable}
-          className="bg-white px-6 py-4 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 font-black text-xs uppercase hover:border-red-500 hover:text-red-600 transition-all flex items-center gap-2"
+          onClick={() => alert('Nova mesa disponível apenas via Gestor')}
+          className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-gray-500 font-bold text-[10px] uppercase hover:border-red-500 hover:text-red-600 transition-all"
         >
-          <Plus size={18} /> Cadastrar Nova Mesa
+          <Plus size={14} /> Nova Mesa
         </button>
       </div>
 
-      {/* Grid de Atendimento */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+      {/* Grid Mesas Profissional */}
+      <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 2xl:grid-cols-12 gap-3 lg:gap-4">
         {tables.filter(t => activeTab === 'TABLES' || t.status === TableStatus.OCCUPIED).map(table => (
           <button
             key={table.id}
             onClick={() => handleOpenTable(table)}
-            className={`p-6 rounded-[32px] border-2 transition-all flex flex-col items-center gap-2 relative ${
+            className={`p-4 sm:p-5 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 group relative ${
               table.status === TableStatus.OCCUPIED 
-                ? 'border-red-600 bg-red-50 text-red-700 shadow-xl shadow-red-100 scale-105 z-10' 
-                : 'border-white bg-white hover:border-red-200 shadow-sm'
+                ? 'border-red-600 bg-red-50 text-red-700 shadow-md ring-2 ring-red-100 ring-offset-2' 
+                : 'border-white bg-white hover:border-red-200 shadow-sm hover:shadow-md'
             }`}
           >
-            <span className="font-black text-2xl tracking-tighter">{activeTab === 'TABLES' ? 'Mesa' : 'CMD'} {table.id}</span>
-            {table.comandaId && (
-              <span className="text-[9px] bg-red-600 text-white px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">
-                #{table.comandaId}
-              </span>
-            )}
-            <span className="text-[10px] font-black opacity-60 uppercase tracking-widest">
+            <span className="font-bold text-base sm:text-lg tracking-tight">#{table.id}</span>
+            <div className="h-1.5 w-1.5 rounded-full bg-current opacity-30 mb-1" />
+            <span className="text-[9px] font-bold opacity-70 uppercase tracking-widest truncate max-w-full">
               {table.status === TableStatus.OCCUPIED 
                 ? `R$ ${table.orderItems.reduce((s, i) => s + (i.price * i.quantity), 0).toFixed(0)}` 
                 : 'Livre'}
@@ -139,180 +113,154 @@ const POS: React.FC<POSProps> = ({ tables, setTables, products, onAddItems, onFi
         ))}
       </div>
 
-      {/* Painel Lateral de Atendimento */}
+      {/* Drawer Responsivo */}
       {selectedTable && currentTable && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-md">
-          <div className="w-full max-w-xl bg-white h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
-            <div className="p-8 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-20">
-              <div className="flex items-center gap-5">
-                <div className="w-16 h-16 bg-red-600 text-white rounded-3xl flex items-center justify-center font-black text-3xl shadow-2xl shadow-red-200 rotate-2">
+        <div className="fixed inset-0 z-[100] flex justify-end">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setSelectedTable(null)} />
+          
+          <div className="relative w-full max-w-md lg:max-w-lg bg-white h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+            {/* Drawer Header */}
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-20">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-red-600 text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-lg">
                   {currentTable.id}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-gray-900 tracking-tight leading-none mb-1">
-                    {activeTab === 'TABLES' ? 'Mesa' : 'Comanda'} {currentTable.id}
-                  </h2>
-                  <div className="flex items-center gap-2 text-red-600 font-black text-[10px] uppercase tracking-widest">
-                    <ReceiptText size={12} /> <span>Vinculada #{currentTable.comandaId || 'NOVA'}</span>
-                  </div>
+                  <h2 className="text-base font-bold text-gray-900 leading-none">Mesa {currentTable.id}</h2>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-1">Comanda #{currentTable.comandaId || 'NOVA'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => alert('Imprimindo Pré-Conta...')} className="p-4 text-gray-400 hover:text-red-600 rounded-2xl bg-gray-50 hover:bg-red-50 transition-all">
-                  <PrinterIcon size={24} />
-                </button>
-                <button onClick={() => setSelectedTable(null)} className="p-4 hover:bg-gray-100 rounded-full transition-colors text-gray-400"><X size={24} /></button>
+                <button onClick={() => alert('Imprimindo...')} className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-all"><PrinterIcon size={18} /></button>
+                <button onClick={() => setSelectedTable(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"><X size={20} /></button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-hidden flex flex-col relative bg-gray-50/50">
+            {/* Drawer Body */}
+            <div className="flex-1 overflow-y-auto bg-gray-50/50">
               {isAddingItems ? (
-                /* Aba: Adicionar Produtos */
-                <div className="flex-1 flex flex-col animate-in fade-in duration-200">
-                  <div className="p-6 bg-white border-b shadow-sm">
-                    <div className="relative">
-                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={20} />
-                       <input type="text" placeholder="Filtrar cardápio..." className="w-full pl-12 pr-4 py-5 rounded-2xl bg-gray-50 border-none focus:ring-2 focus:ring-red-500 outline-none text-lg font-bold" />
-                    </div>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-6 grid grid-cols-2 gap-4">
-                    {products.map(p => (
-                      <button 
-                        key={p.id} 
-                        onClick={() => handleAddProduct(p)}
-                        className="p-6 bg-white border border-transparent rounded-[32px] hover:border-red-500 hover:shadow-2xl hover:-translate-y-1 transition-all text-left group"
-                      >
-                        <p className="font-black text-gray-800 group-hover:text-red-600 transition-colors line-clamp-2 mb-2 leading-tight">{p.name}</p>
-                        <p className="text-red-600 font-black text-xl tracking-tighter">R$ {p.price.toFixed(2)}</p>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="p-8 bg-white border-t border-gray-100">
-                    <button onClick={() => setIsAddingItems(false)} className="w-full py-6 bg-red-600 text-white font-black rounded-3xl shadow-2xl shadow-red-200 text-xl active:scale-95 transition-transform">LANÇAR NO PEDIDO</button>
-                  </div>
+                /* Cardápio Compacto */
+                <div className="p-4 space-y-4">
+                   <div className="relative mb-6">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+                      <input type="text" placeholder="Buscar no cardápio..." className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-red-500 outline-none" />
+                   </div>
+                   <div className="grid grid-cols-1 gap-2">
+                     {products.map(p => (
+                       <button key={p.id} onClick={() => handleAddProduct(p)} className="p-4 bg-white border border-gray-100 rounded-xl hover:border-red-300 transition-all text-left flex justify-between items-center group">
+                         <div>
+                            <p className="font-bold text-sm text-gray-800 leading-tight mb-1">{p.name}</p>
+                            <p className="text-[10px] font-bold text-gray-400 uppercase">{p.category}</p>
+                         </div>
+                         <p className="text-red-600 font-bold text-sm">R$ {p.price.toFixed(2)}</p>
+                       </button>
+                     ))}
+                   </div>
                 </div>
               ) : isClosingBill ? (
-                /* Aba: Pagamento Consolidado */
-                <div className="flex-1 flex flex-col animate-in slide-in-from-bottom duration-500">
-                  <div className="p-8 space-y-8 flex-1 overflow-y-auto">
-                    <div className="bg-red-600 p-12 rounded-[48px] shadow-2xl shadow-red-200 text-white relative overflow-hidden">
-                       <p className="text-red-100 text-xs font-black uppercase tracking-[0.4em] mb-3 opacity-80">Total Final</p>
-                       <p className="text-7xl font-black tracking-tighter">R$ {totalBill.toFixed(2)}</p>
-                       <DollarSign size={200} className="absolute -right-12 -bottom-12 opacity-10 rotate-12" />
-                    </div>
+                /* Checkout Refinado */
+                <div className="p-6 space-y-6">
+                  <div className="bg-red-600 p-8 rounded-2xl shadow-lg text-white text-center relative overflow-hidden">
+                    <p className="text-[9px] font-bold uppercase tracking-widest opacity-80 mb-2">Total a Pagar</p>
+                    <p className="text-4xl font-bold tracking-tight">R$ {totalBill.toFixed(2)}</p>
+                    <DollarSign size={80} className="absolute -right-4 -bottom-4 opacity-10" />
+                  </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <PaymentBtn active={paymentMethod === PaymentMethod.PIX} onClick={() => setPaymentMethod(PaymentMethod.PIX)} label="PIX Instantâneo" icon={<Smartphone size={32} />} />
-                      <PaymentBtn active={paymentMethod === PaymentMethod.CREDIT} onClick={() => setPaymentMethod(PaymentMethod.CREDIT)} label="Cartão Crédito" icon={<CreditCard size={32} />} />
-                      <PaymentBtn active={paymentMethod === PaymentMethod.DEBIT} onClick={() => setPaymentMethod(PaymentMethod.DEBIT)} label="Cartão Débito" icon={<Wallet size={32} />} />
-                      <PaymentBtn active={paymentMethod === PaymentMethod.CASH} onClick={() => setPaymentMethod(PaymentMethod.CASH)} label="Dinheiro (Troco)" icon={<Banknote size={32} />} />
-                    </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <PaymentBtnCompact active={paymentMethod === PaymentMethod.PIX} onClick={() => setPaymentMethod(PaymentMethod.PIX)} label="PIX" icon={<Smartphone size={18} />} />
+                    <PaymentBtnCompact active={paymentMethod === PaymentMethod.CREDIT} onClick={() => setPaymentMethod(PaymentMethod.CREDIT)} label="CRÉDITO" icon={<CreditCard size={18} />} />
+                    <PaymentBtnCompact active={paymentMethod === PaymentMethod.DEBIT} onClick={() => setPaymentMethod(PaymentMethod.DEBIT)} label="DÉBITO" icon={<Wallet size={18} />} />
+                    <PaymentBtnCompact active={paymentMethod === PaymentMethod.CASH} onClick={() => setPaymentMethod(PaymentMethod.CASH)} label="DINHEIRO" icon={<Banknote size={18} />} />
+                  </div>
 
-                    {paymentMethod === PaymentMethod.CASH && (
-                      <div className="bg-white p-10 rounded-[48px] shadow-xl border border-gray-100 space-y-6 animate-in zoom-in-95">
-                        <div className="space-y-3">
-                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block text-center">Valor Recebido do Cliente</label>
-                          <div className="relative">
-                            <span className="absolute left-6 top-1/2 -translate-y-1/2 font-black text-gray-200 text-4xl">R$</span>
-                            <input type="number" value={amountReceived} onChange={(e) => setAmountReceived(e.target.value)} placeholder="0,00" className="w-full pl-20 pr-6 py-8 bg-gray-50 rounded-[32px] text-5xl font-black outline-none border-4 border-transparent focus:border-red-500 transition-all text-center" />
-                          </div>
-                        </div>
-                        {parseFloat(amountReceived) >= totalBill && (
-                          <div className="p-8 bg-green-50 border-2 border-green-100 rounded-[32px] flex flex-col items-center gap-2">
-                               <span className="text-[11px] text-green-600 font-black uppercase tracking-[0.3em]">Troco Disponível</span>
-                               <span className="text-6xl font-black text-green-700 tracking-tighter">R$ {changeValue.toFixed(2)}</span>
-                          </div>
-                        )}
+                  {paymentMethod === PaymentMethod.CASH && (
+                    <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-4 animate-in zoom-in-95">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase block">Valor Recebido (R$)</label>
+                        <input type="number" value={amountReceived} onChange={(e) => setAmountReceived(e.target.value)} className="w-full p-4 bg-gray-50 rounded-xl text-2xl font-bold border-2 border-transparent focus:border-red-500 outline-none transition-all text-center" placeholder="0,00" />
                       </div>
-                    )}
-                  </div>
-
-                  <div className="p-8 bg-white border-t border-gray-100 space-y-4">
-                    <button 
-                      disabled={!canFinalize}
-                      onClick={handleFinalize}
-                      className="w-full py-7 bg-red-600 text-white font-black rounded-[32px] shadow-2xl shadow-red-200 disabled:opacity-40 transition-all text-2xl tracking-tight active:scale-95"
-                    >
-                      {paymentMethod === PaymentMethod.CASH && changeValue > 0 ? 'CONCLUIR COM TROCO' : 'FECHAR VENDA AGORA'}
-                    </button>
-                    <button onClick={() => { setIsClosingBill(false); setPaymentMethod(null); setAmountReceived(""); }} className="w-full py-2 text-gray-400 font-black text-[11px] uppercase tracking-[0.5em] hover:text-red-600 transition-colors">Voltar</button>
-                  </div>
+                      {parseFloat(amountReceived) >= totalBill && (
+                        <div className="p-4 bg-green-50 border border-green-100 rounded-xl text-center">
+                           <span className="text-[10px] text-green-600 font-bold uppercase block mb-1">Troco</span>
+                           <span className="text-2xl font-bold text-green-700">R$ {changeValue.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
-                /* Aba: Itens da Comanda */
-                <div className="flex-1 flex flex-col">
-                  <div className="flex-1 overflow-y-auto p-8 space-y-4">
-                    {currentTable.orderItems.length > 0 ? (
-                      currentTable.orderItems.map(item => (
-                        <div key={item.id} className="p-6 bg-white rounded-3xl border border-gray-100 flex justify-between items-center shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
-                          <div className="flex items-center gap-6">
-                            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center font-black text-xl">
-                              {item.quantity}
-                            </div>
-                            <div>
-                              <p className="font-black text-gray-800 text-xl leading-none mb-2">{item.name}</p>
-                              <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                <span className={`w-2 h-2 rounded-full ${item.status === OrderStatus.READY ? 'bg-green-500' : 'bg-orange-400'}`} />
-                                {item.status}
-                              </div>
-                            </div>
-                          </div>
-                          <span className="font-black text-2xl text-gray-900 tracking-tighter">R$ {(item.price * item.quantity).toFixed(2)}</span>
+                /* Itens da Comanda */
+                <div className="p-4 space-y-2">
+                   {currentTable.orderItems.map(item => (
+                     <div key={item.id} className="p-3 bg-white rounded-xl border border-gray-100 flex justify-between items-center shadow-sm">
+                        <div className="flex items-center gap-3">
+                           <span className="w-8 h-8 flex items-center justify-center bg-red-50 text-red-600 rounded-lg text-xs font-bold">{item.quantity}x</span>
+                           <div>
+                              <p className="font-bold text-xs text-gray-800">{item.name}</p>
+                              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">{item.status}</span>
+                           </div>
                         </div>
-                      ))
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-gray-300 opacity-20">
-                        <ShoppingBag size={120} strokeWidth={1} />
-                        <p className="font-black text-3xl uppercase tracking-tighter mt-4">Comanda Vazia</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="p-10 bg-white border-t border-gray-100 space-y-8 shadow-[0_-20px_50px_rgba(0,0,0,0.05)]">
-                    <div className="flex justify-between items-end">
-                       <span className="text-gray-400 font-black uppercase text-xs tracking-[0.5em]">Total Acumulado</span>
-                       <span className="text-6xl font-black text-gray-900 tracking-tighter">R$ {totalBill.toFixed(2)}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button onClick={() => setIsAddingItems(true)} className="flex items-center justify-center gap-3 py-7 bg-red-600 text-white rounded-[32px] font-black shadow-2xl shadow-red-200 hover:bg-red-700 transition-all text-xl active:scale-95">
-                        <Plus size={24} /> NOVO ITEM
-                      </button>
-                      <button 
-                        disabled={currentTable.orderItems.length === 0}
-                        onClick={() => setIsClosingBill(true)} 
-                        className="flex items-center justify-center gap-3 py-7 bg-white border-4 border-red-600 text-red-600 rounded-[32px] font-black hover:bg-red-50 transition-all disabled:opacity-20 text-xl active:scale-95"
-                      >
-                        <DollarSign size={24} /> RECEBER
-                      </button>
-                      <button onClick={() => setTransferModal({ isOpen: true, targetTableId: null })} className="col-span-2 py-3 text-gray-400 font-black text-[11px] uppercase tracking-[0.6em] hover:text-red-600 transition-colors text-center">
-                        Mudar Mesa ou Juntar Comandas
-                      </button>
-                    </div>
-                  </div>
+                        <p className="font-bold text-xs text-gray-900">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                     </div>
+                   ))}
+                   {currentTable.orderItems.length === 0 && (
+                     <div className="py-20 text-center opacity-20 flex flex-col items-center">
+                       <ShoppingBag size={48} strokeWidth={1} />
+                       <p className="text-xs font-bold uppercase mt-2">Sem pedidos</p>
+                     </div>
+                   )}
                 </div>
               )}
+            </div>
+
+            {/* Drawer Footer Fixed */}
+            <div className="p-6 bg-white border-t border-gray-100 space-y-3 z-30">
+               {isAddingItems ? (
+                 <button onClick={() => setIsAddingItems(false)} className="w-full py-4 bg-red-600 text-white font-bold rounded-xl shadow-lg text-sm uppercase tracking-widest transition-all active:scale-95">LANÇAR PEDIDO</button>
+               ) : isClosingBill ? (
+                 <div className="space-y-2">
+                    <button disabled={!canFinalize} onClick={handleFinalize} className="w-full py-4 bg-red-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-40 text-sm uppercase tracking-widest">FECHAR CONTA</button>
+                    <button onClick={() => { setIsClosingBill(false); setPaymentMethod(null); }} className="w-full py-2 text-gray-400 text-[10px] font-bold uppercase tracking-widest">Voltar</button>
+                 </div>
+               ) : (
+                 <div className="space-y-4">
+                    <div className="flex justify-between items-center px-1">
+                       <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Subtotal</span>
+                       <span className="text-2xl font-bold text-gray-900 tracking-tight">R$ {totalBill.toFixed(2)}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button onClick={() => setIsAddingItems(true)} className="flex items-center justify-center gap-2 py-4 bg-red-600 text-white rounded-xl font-bold text-xs shadow-md hover:bg-red-700 active:scale-95 transition-all">
+                        <Plus size={16} /> NOVO ITEM
+                      </button>
+                      <button disabled={totalBill === 0} onClick={() => setIsClosingBill(true)} className="flex items-center justify-center gap-2 py-4 bg-white border-2 border-red-600 text-red-600 rounded-xl font-bold text-xs hover:bg-red-50 disabled:opacity-20 active:scale-95 transition-all">
+                        <DollarSign size={16} /> RECEBER
+                      </button>
+                    </div>
+                    <button onClick={() => setTransferModal({ isOpen: true, targetTableId: null })} className="w-full py-2 text-gray-400 text-[9px] font-bold uppercase tracking-[0.2em] text-center hover:text-red-600 transition-colors">Transferir p/ Mesa</button>
+                 </div>
+               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Transferência */}
+      {/* Modal Transferência Compacto */}
       {transferModal.isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4">
-          <div className="bg-white p-12 rounded-[60px] w-full max-w-md shadow-2xl animate-in zoom-in-95 border-t-8 border-red-600">
-             <div className="text-center mb-10">
-                <div className="w-24 h-24 bg-red-50 text-red-600 rounded-[40px] flex items-center justify-center mx-auto mb-6 shadow-2xl -rotate-6"><ArrowLeftRight size={40} /></div>
-                <h3 className="text-4xl font-black text-gray-900 tracking-tighter">Mudar Mesa</h3>
-                <p className="text-gray-400 font-bold mt-2">Transfira a Comanda #{currentTable?.comandaId}</p>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in-95">
+             <div className="text-center mb-6">
+                <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mx-auto mb-3"><ArrowLeftRight size={20} /></div>
+                <h3 className="text-lg font-bold text-gray-900">Transferir Mesa</h3>
+                <p className="text-xs text-gray-400 font-medium">Mover pedidos da Mesa {currentTable?.id}</p>
              </div>
-             <div className="grid grid-cols-4 gap-4 mb-10 max-h-60 overflow-y-auto pr-2 scrollbar-hide">
+             <div className="grid grid-cols-4 gap-2 mb-6 max-h-40 overflow-y-auto p-1">
                 {tables.filter(t => t.id !== currentTable?.id && t.status === TableStatus.AVAILABLE).map(t => (
-                  <button key={t.id} onClick={() => setTransferModal({ ...transferModal, targetTableId: t.id })} className={`aspect-square rounded-[30px] border-2 font-black transition-all text-2xl flex items-center justify-center shadow-sm ${transferModal.targetTableId === t.id ? 'border-red-600 bg-red-600 text-white shadow-red-200 scale-110' : 'border-gray-50 bg-gray-50 text-gray-400 hover:border-red-200'}`}>{t.id}</button>
+                  <button key={t.id} onClick={() => setTransferModal({ ...transferModal, targetTableId: t.id })} className={`aspect-square rounded-lg border font-bold text-sm transition-all ${transferModal.targetTableId === t.id ? 'border-red-600 bg-red-600 text-white' : 'border-gray-200 bg-gray-50 text-gray-400 hover:border-red-400'}`}>{t.id}</button>
                 ))}
              </div>
-             <div className="flex flex-col gap-3">
-                <button disabled={!transferModal.targetTableId} onClick={() => { onTransfer(currentTable!.id, transferModal.targetTableId!); setTransferModal({ isOpen: false, targetTableId: null }); setSelectedTable(null); }} className="w-full py-6 bg-red-600 text-white font-black rounded-3xl shadow-2xl shadow-red-100 text-xl tracking-widest active:scale-95 transition-all">EFETIVAR MUDANÇA</button>
-                <button onClick={() => setTransferModal({ isOpen: false, targetTableId: null })} className="w-full py-3 text-gray-400 font-black text-[11px] uppercase tracking-widest text-center">Cancelar</button>
+             <div className="grid grid-cols-2 gap-3">
+                <button disabled={!transferModal.targetTableId} onClick={() => { onTransfer(currentTable!.id, transferModal.targetTableId!); setTransferModal({ isOpen: false, targetTableId: null }); setSelectedTable(null); }} className="py-3 bg-red-600 text-white font-bold rounded-xl shadow-md text-xs uppercase disabled:opacity-40">Confirmar</button>
+                <button onClick={() => setTransferModal({ isOpen: false, targetTableId: null })} className="py-3 bg-gray-100 text-gray-500 font-bold rounded-xl text-xs uppercase">Sair</button>
              </div>
           </div>
         </div>
@@ -321,10 +269,10 @@ const POS: React.FC<POSProps> = ({ tables, setTables, products, onAddItems, onFi
   );
 };
 
-const PaymentBtn = ({ active, onClick, label, icon }: any) => (
-  <button onClick={onClick} className={`flex flex-col items-center justify-center gap-4 p-8 rounded-[40px] border-4 transition-all active:scale-95 ${active ? 'border-red-600 bg-red-600 text-white shadow-2xl shadow-red-200 scale-105 z-10' : 'border-transparent bg-white text-gray-400 hover:border-red-100 shadow-sm'}`}>
-    <div className={`${active ? 'text-white scale-125' : 'text-gray-200'} transition-transform duration-300`}>{icon}</div>
-    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-center leading-tight">{label}</span>
+const PaymentBtnCompact = ({ active, onClick, label, icon }: any) => (
+  <button onClick={onClick} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all active:scale-95 ${active ? 'border-red-600 bg-red-600 text-white shadow-md scale-[1.02]' : 'border-gray-100 bg-white text-gray-400 hover:border-red-100'}`}>
+    <div className={active ? 'text-white' : 'text-red-500'}>{icon}</div>
+    <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
   </button>
 );
 
