@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { AlertCircle, ShoppingCart, TrendingDown, Target, Zap, Trash2, Plus, Save } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
-import { Product } from '../types';
+import { Product } from '../types.ts';
 
 interface InventoryProps {
   products: Product[];

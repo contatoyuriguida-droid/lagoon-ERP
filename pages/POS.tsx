@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, ReceiptText, LayoutGrid, List } from 'lucide-react';
-import { Table, TableStatus, Product, Customer, PaymentMethod, OrderStatus } from '../types';
+import { Table, TableStatus, Product, Customer, PaymentMethod, OrderStatus } from '../types.ts';
 
 interface POSProps {
   tables: Table[];

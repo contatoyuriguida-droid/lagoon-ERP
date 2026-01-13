@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Printer as PrinterIcon, Wifi, Globe, ShieldCheck, Zap, Database, Server, RefreshCw, Plus, Trash2, Key, CheckCircle2 } from 'lucide-react';
-import { Printer, Connection } from '../types';
+import { Printer, Connection } from '../types.ts';
 
 interface SettingsProps {
   printers: Printer[];

@@ -11,7 +11,7 @@ import {
   Printer as PrinterIcon,
   Wifi
 } from 'lucide-react';
-import { AppSection } from './types';
+import { AppSection } from './types.ts';
 
 export const COLORS = {
   primary: '#dc2626', // Red-600

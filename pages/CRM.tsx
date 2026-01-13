@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Gift, Heart, UserPlus, MessageSquare, Star, Search } from 'lucide-react';
-import { Customer } from '../types';
+import { Customer } from '../types.ts';
 
 interface CRMProps {
   customers: Customer[];

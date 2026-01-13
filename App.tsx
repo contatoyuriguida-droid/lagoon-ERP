@@ -1,15 +1,15 @@
 
 import React, { useState } from 'react';
 import { Bell, Search, Menu, User, LogOut } from 'lucide-react';
-import { AppSection, Table, TableStatus, OrderStatus, Product, Transaction, Customer, OrderItem, PaymentMethod, Printer, Connection } from './types';
-import { NAVIGATION_ITEMS, MOCK_PRODUCTS } from './constants';
-import Dashboard from './pages/Dashboard';
-import POS from './pages/POS';
-import KDS from './pages/KDS';
-import Inventory from './pages/Inventory';
-import CRM from './pages/CRM';
-import Settings from './pages/Settings';
-import ArchitectInfo from './pages/ArchitectInfo';
+import { AppSection, Table, TableStatus, OrderStatus, Product, Transaction, Customer, OrderItem, PaymentMethod, Printer, Connection } from './types.ts';
+import { NAVIGATION_ITEMS, MOCK_PRODUCTS } from './constants.tsx';
+import Dashboard from './pages/Dashboard.tsx';
+import POS from './pages/POS.tsx';
+import KDS from './pages/KDS.tsx';
+import Inventory from './pages/Inventory.tsx';
+import CRM from './pages/CRM.tsx';
+import Settings from './pages/Settings.tsx';
+import ArchitectInfo from './pages/ArchitectInfo.tsx';
 
 const App: React.FC = () => {
   const [activeSection, setActiveSection] = useState<AppSection>(AppSection.DASHBOARD);

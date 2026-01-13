@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Users, DollarSign, Clock, Printer, Wifi, ShieldCheck, Zap } from 'lucide-react';
-import { Transaction, Product } from '../types';
+import { Transaction, Product } from '../types.ts';
 
 interface DashboardProps {
   transactions: Transaction[];

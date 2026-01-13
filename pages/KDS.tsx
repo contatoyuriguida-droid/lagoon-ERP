@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Clock, CheckCircle2, AlertTriangle, ChefHat } from 'lucide-react';
-import { Table, OrderStatus } from '../types';
+import { Table, OrderStatus } from '../types.ts';
 
 interface KDSProps {
   tables: Table[];
