@@ -45,46 +45,56 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
+  // Refs para evitar closures obsoletas e garantir dados reais no momento do Sync
   const tablesRef = useRef<Table[]>([]);
   const transactionsRef = useRef<Transaction[]>([]);
+  const productsRef = useRef<Product[]>([]);
   
   useEffect(() => { tablesRef.current = tables; }, [tables]);
   useEffect(() => { transactionsRef.current = transactions; }, [transactions]);
+  useEffect(() => { productsRef.current = products; }, [products]);
 
   const isWritingRef = useRef(false);
   const lastSyncTimeRef = useRef(0);
 
-  const persistToCloud = useCallback(async (overrides?: any, priority = false) => {
+  const persistToCloud = useCallback(async (overrides?: any) => {
+    // Se estivermos em meio a uma escrita crítica, ignoramos outras tentativas por 1s
+    if (isWritingRef.current && !overrides?.priority) return;
+    
     isWritingRef.current = true;
     setIsSyncing(true);
     
+    const now = Date.now();
     const currentState = {
-      products,
+      products: productsRef.current,
       transactions: overrides?.transactions || transactionsRef.current,
       customers,
       users,
       tables: overrides?.tables || tablesRef.current,
       printers,
       connections,
-      lastGlobalUpdate: Date.now()
+      lastGlobalUpdate: now
     };
 
     try {
       await setDoc(doc(db, DOC_PATH), currentState);
-      lastSyncTimeRef.current = currentState.lastGlobalUpdate;
+      lastSyncTimeRef.current = now;
     } catch (e) {
-      console.error("Erro Crítico de Sync:", e);
+      console.error("Sync Error:", e);
     } finally {
+      // Pequeno delay para garantir que o onSnapshot não processe a própria escrita de forma circular
       setTimeout(() => {
         isWritingRef.current = false;
         setIsSyncing(false);
-      }, 500);
+      }, 1000);
     }
-  }, [products, customers, users, printers, connections]);
+  }, [customers, users, printers, connections]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
+      // Ignora atualizações da nuvem se este terminal acabou de enviar uma
       if (isWritingRef.current) return;
+
       if (docSnap.exists()) {
         const cloud = docSnap.data();
         if (cloud.lastGlobalUpdate && cloud.lastGlobalUpdate > lastSyncTimeRef.current) {
@@ -102,14 +112,13 @@ const App: React.FC = () => {
           id: i + 1, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() 
         }));
         setTables(initTables);
-        persistToCloud({ tables: initTables }, true);
+        persistToCloud({ tables: initTables, priority: true });
       }
       setIsLoaded(true);
     });
     return () => unsub();
   }, [persistToCloud]);
 
-  // ACTION: ADICIONAR ITEM
   const addOrderItem = useCallback((tableId: number, product: Product, qty: number, comandaId?: string) => {
     const newTables = tablesRef.current.map(t => {
       if (t.id === tableId) {
@@ -129,10 +138,9 @@ const App: React.FC = () => {
       return t;
     });
     setTables(newTables);
-    persistToCloud({ tables: newTables }, true);
+    persistToCloud({ tables: newTables, priority: true });
   }, [persistToCloud]);
 
-  // ACTION: FINALIZAR PAGAMENTO (CORREÇÃO CRÍTICA)
   const finalizePayment = useCallback((tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
     const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
@@ -154,19 +162,20 @@ const App: React.FC = () => {
           ...t,
           orderItems: remaining,
           status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
-          comandaId: isNowAvailable ? undefined : t.comandaId,
+          // Forçamos a limpeza da comanda se não houver itens
+          comandaId: isNowAvailable ? "" : t.comandaId,
           lastUpdate: Date.now()
         };
       }
       return t;
     });
 
+    // Atualização imediata local e remota com alta prioridade
     setTransactions(newTransactions);
     setTables(newTables);
-    persistToCloud({ tables: newTables, transactions: newTransactions }, true);
+    persistToCloud({ tables: newTables, transactions: newTransactions, priority: true });
   }, [persistToCloud]);
 
-  // ACTION: KDS - CONCLUIR ITEM
   const markItemAsReady = useCallback((tableId: number, itemId: string) => {
     const newTables = tablesRef.current.map(t => {
       if (t.id === tableId) {
@@ -181,24 +190,24 @@ const App: React.FC = () => {
       return t;
     });
     setTables(newTables);
-    persistToCloud({ tables: newTables }, true);
+    persistToCloud({ tables: newTables, priority: true });
   }, [persistToCloud]);
 
   const handleAddNewTable = useCallback(() => {
     const nextId = tablesRef.current.length > 0 ? Math.max(...tablesRef.current.map(t => t.id)) + 1 : 1;
     const newTables = [...tablesRef.current, { id: nextId, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() }];
     setTables(newTables);
-    persistToCloud({ tables: newTables }, true);
+    persistToCloud({ tables: newTables, priority: true });
   }, [persistToCloud]);
 
-  if (!isLoaded) return <div className="loading-screen"><div className="spinner"></div><div className="loading-text">Lagoon Cloud Sync...</div></div>;
+  if (!isLoaded) return <div className="loading-screen"><div className="spinner"></div><div className="loading-text">Sincronia Lagoon...</div></div>;
 
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
         <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl mb-6">L</div>
         <h1 className="text-3xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
-        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-10">Terminal Operacional</p>
+        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-10">Terminal Operacional Cloud</p>
         <div className="flex gap-6 mb-12">
           {[0, 1, 2, 3].map((idx) => (
             <div key={idx} className={`w-6 h-6 rounded-full border-4 transition-all duration-300 ${pinBuffer.length > idx ? 'bg-red-600 border-red-600 scale-125' : 'bg-gray-100 border-gray-200'}`} />
@@ -245,7 +254,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-6">
              <div className="hidden md:flex items-center gap-2 bg-green-50 px-4 py-2 rounded-full border border-green-100">
                 <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500 shadow-sm'}`} />
-                <span className="text-[10px] font-black text-green-700 uppercase tracking-widest">Sincronizado</span>
+                <span className="text-[10px] font-black text-green-700 uppercase tracking-widest">Ativo</span>
              </div>
              <div className="flex items-center gap-5 pl-6 border-l-2 border-gray-100">
                 <div className="text-right">
@@ -264,7 +273,11 @@ const App: React.FC = () => {
             {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} printers={printers} />}
             {activeSection === AppSection.POS && <POS currentUser={currentUser} tables={tables} products={products} onAddItems={addOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} />}
             {activeSection === AppSection.KDS && <KDS tables={tables} onMarkReady={markItemAsReady} />}
-            {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={setProducts} />}
+            {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={(newProds) => { 
+                const updated = typeof newProds === 'function' ? newProds(products) : newProds;
+                setProducts(updated);
+                persistToCloud({ products: updated, priority: true });
+            }} />}
             {activeSection === AppSection.CRM && <CRM customers={customers} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
             {activeSection === AppSection.ARCHITECT && <ArchitectInfo />}
