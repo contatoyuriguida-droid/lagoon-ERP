@@ -92,7 +92,9 @@ export interface Printer {
   id: string;
   name: string;
   type: 'COZINHA' | 'CAIXA' | 'BAR';
-  ip: string;
+  connectionMethod: 'IP' | 'USB';
+  ip?: string;
+  usbVendorId?: string;
   status: 'ONLINE' | 'OFFLINE';
   isDefault?: boolean;
 }
