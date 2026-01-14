@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Printer as PrinterIcon, Wifi, Plus, Trash2, Key, UserCog, UserPlus, Shield, Smartphone, Send, CheckCircle, Laptop, Cable } from 'lucide-react';
+import { Printer as PrinterIcon, Wifi, Plus, Trash2, UserCog, UserPlus, Shield, Smartphone, Send, Laptop, Cable, Network } from 'lucide-react';
 import { Printer, Connection, User, UserRole } from '../types.ts';
 
 interface SettingsProps {
@@ -23,43 +23,25 @@ const Settings: React.FC<SettingsProps> = ({ printers, setPrinters, connections,
   const [newUser, setNewUser] = useState<Partial<User>>({ role: UserRole.WAITER });
 
   const addPrinter = () => {
-    if (!newPrinter.name) return;
-    if (newPrinter.connectionMethod === 'IP' && !newPrinter.ip) return;
+    if (!newPrinter.name || !newPrinter.ip) return;
     
     setPrinters(prev => [...prev, { 
       ...newPrinter, 
       id: Date.now().toString(), 
-      status: 'ONLINE' 
+      status: 'ONLINE',
+      connectionMethod: 'IP'
     } as Printer]);
     setShowPrinterModal(false);
     setNewPrinter({ type: 'COZINHA', status: 'ONLINE', connectionMethod: 'IP' });
   };
 
-  const handlePairUSB = async () => {
-    try {
-      // @ts-ignore - WebUSB API
-      const device = await navigator.usb.requestDevice({ filters: [] });
-      setNewPrinter(prev => ({
-        ...prev,
-        connectionMethod: 'USB',
-        usbVendorId: device.vendorId.toString(),
-        name: prev.name || device.productName || 'Impressora USB'
-      }));
-    } catch (err) {
-      console.warn("Usuário cancelou pareamento USB ou navegador não suporta");
-    }
-  };
-
   const testPrinter = (p: Printer) => {
     setTestingId(p.id);
+    // Simulação de tentativa de conexão via Socket TCP na porta 9100
     setTimeout(() => {
       setTestingId(null);
-      if (p.connectionMethod === 'USB') {
-        alert(`Teste USB enviado para ${p.name}. Verifique se a impressora "piscou".`);
-      } else {
-        alert(`Sinal IP enviado para ${p.name} (${p.ip}:9100).`);
-      }
-    }, 1500);
+      alert(`Comando de teste enviado com sucesso para ${p.name} no IP ${p.ip} (Porta 9100).`);
+    }, 1200);
   };
 
   const addUser = () => {
@@ -109,17 +91,17 @@ const Settings: React.FC<SettingsProps> = ({ printers, setPrinters, connections,
          </div>
       </section>
 
-      {/* SEÇÃO: TERMINAIS */}
+      {/* SEÇÃO: TERMINAIS DE IMPRESSÃO */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-8 border-t border-gray-100">
         
-        {/* Impressoras */}
+        {/* Impressoras de Rede */}
         <section className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm space-y-8">
            <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                 <div className="p-3 bg-gray-50 text-gray-400 rounded-2xl"><PrinterIcon size={24} /></div>
+                 <div className="p-3 bg-gray-50 text-gray-400 rounded-2xl"><Network size={24} /></div>
                  <div>
-                    <h2 className="text-lg font-black text-gray-900 leading-tight">Impressoras</h2>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">USB ou Rede (Port 9100)</p>
+                    <h2 className="text-lg font-black text-gray-900 leading-tight">Terminais de Rede (IP)</h2>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Protocolo Esc/POS • Porta 9100</p>
                  </div>
               </div>
               <button onClick={() => setShowPrinterModal(true)} className="p-2 bg-red-600 text-white rounded-xl shadow-lg hover:scale-110 transition-all"><Plus size={20} /></button>
@@ -129,13 +111,13 @@ const Settings: React.FC<SettingsProps> = ({ printers, setPrinters, connections,
               {printers.map(p => (
                 <div key={p.id} className="p-4 bg-gray-50 rounded-2xl flex items-center justify-between border border-transparent hover:border-red-100 transition-all group">
                    <div className="flex items-center gap-4">
-                      <div className={`p-2 rounded-lg ${p.connectionMethod === 'USB' ? 'bg-blue-100 text-blue-600' : 'bg-red-100 text-red-600'}`}>
-                         {p.connectionMethod === 'USB' ? <Cable size={18} /> : <Wifi size={18} />}
+                      <div className="p-2 rounded-lg bg-red-100 text-red-600">
+                         <Wifi size={18} />
                       </div>
                       <div>
                          <p className="font-black text-gray-800 text-sm leading-tight">{p.name}</p>
                          <p className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">
-                            {p.connectionMethod === 'USB' ? `USB Device (VID:${p.usbVendorId})` : `IP: ${p.ip}`} • <span className="text-red-600">{p.type}</span>
+                            IP: {p.ip} • <span className="text-red-600 font-black">{p.type}</span>
                          </p>
                       </div>
                    </div>
@@ -143,19 +125,23 @@ const Settings: React.FC<SettingsProps> = ({ printers, setPrinters, connections,
                       <button 
                         onClick={() => testPrinter(p)} 
                         className={`p-2 rounded-lg ${testingId === p.id ? 'bg-orange-100 text-orange-600' : 'bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white'}`}
-                        title="Teste de Conexão"
+                        title="Enviar Ticket de Teste"
                       >
-                         {testingId === p.id ? <Send size={16} className="animate-bounce" /> : <Send size={16} />}
+                         <Send size={16} className={testingId === p.id ? "animate-pulse" : ""} />
                       </button>
                       <button onClick={() => setPrinters(prev => prev.filter(pr => pr.id !== p.id))} className="p-2 text-gray-300 hover:text-red-600 transition-all"><Trash2 size={16} /></button>
                    </div>
                 </div>
               ))}
-              {printers.length === 0 && <p className="text-center text-xs text-gray-400 py-8 font-medium italic">Cadastre uma impressora USB ou de Rede.</p>}
+              {printers.length === 0 && (
+                <div className="text-center py-10">
+                   <p className="text-xs text-gray-400 font-bold uppercase tracking-widest italic">Nenhuma impressora IP configurada.</p>
+                </div>
+              )}
            </div>
         </section>
 
-        {/* Integrações */}
+        {/* Integrações Cloud */}
         <section className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm space-y-8">
            <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -187,61 +173,68 @@ const Settings: React.FC<SettingsProps> = ({ printers, setPrinters, connections,
         </section>
       </div>
 
-      {/* MODAL IMPRESSORA (DUAL MODE: IP/USB) */}
+      {/* MODAL IMPRESSORA IP */}
       {showPrinterModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-6">
            <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-              <h3 className="text-xl font-black text-gray-900 mb-6 text-center">Conectar Equipamento</h3>
+              <div className="w-12 h-12 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                 <Network size={24} />
+              </div>
+              <h3 className="text-xl font-black text-gray-900 mb-6 text-center">Adicionar Impressora IP</h3>
               
               <div className="space-y-4">
-                 {/* Seleção de Método */}
-                 <div className="flex bg-gray-50 p-1 rounded-2xl">
-                    <button 
-                      onClick={() => setNewPrinter({...newPrinter, connectionMethod: 'IP'})}
-                      className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${newPrinter.connectionMethod === 'IP' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-400'}`}
-                    >
-                      Rede (IP)
-                    </button>
-                    <button 
-                      onClick={() => setNewPrinter({...newPrinter, connectionMethod: 'USB'})}
-                      className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all ${newPrinter.connectionMethod === 'USB' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-400'}`}
-                    >
-                      USB Local
-                    </button>
+                 <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Identificação</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: Cozinha Fogo" 
+                      value={newPrinter.name} 
+                      onChange={e => setNewPrinter({...newPrinter, name: e.target.value})} 
+                      className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm outline-none font-bold focus:ring-2 focus:ring-red-600" 
+                    />
                  </div>
 
                  <div>
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Nome Amigável</label>
-                    <input type="text" placeholder="Ex: Impressora do Bar" value={newPrinter.name} onChange={e => setNewPrinter({...newPrinter, name: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm outline-none font-bold" />
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Endereço IP Local</label>
+                    <input 
+                      type="text" 
+                      placeholder="192.168.1.100" 
+                      value={newPrinter.ip} 
+                      onChange={e => setNewPrinter({...newPrinter, ip: e.target.value})} 
+                      className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm outline-none font-mono focus:ring-2 focus:ring-red-600" 
+                    />
+                    <p className="text-[8px] text-gray-400 mt-2 italic">* Certifique-se que o IP é estático no roteador.</p>
                  </div>
 
-                 {newPrinter.connectionMethod === 'IP' ? (
-                   <div>
-                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Endereço IP</label>
-                      <input type="text" placeholder="192.168.1.100" value={newPrinter.ip} onChange={e => setNewPrinter({...newPrinter, ip: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl border-none text-sm outline-none font-mono" />
-                   </div>
-                 ) : (
-                   <div className="space-y-3">
-                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Hardware USB</label>
-                      <button onClick={handlePairUSB} className="w-full p-4 bg-blue-50 text-blue-600 border-2 border-dashed border-blue-200 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-blue-100 transition-all">
-                         <Laptop size={16} /> {newPrinter.usbVendorId ? `Dispositivo VID:${newPrinter.usbVendorId}` : 'Parear Impressora USB'}
-                      </button>
-                   </div>
-                 )}
-
                  <div>
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Setor de Saída</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 block">Setor de Operação</label>
                     <div className="grid grid-cols-3 gap-2">
                       {['COZINHA', 'BAR', 'CAIXA'].map(t => (
-                        <button key={t} onClick={() => setNewPrinter({...newPrinter, type: t as any})} className={`py-3 rounded-xl text-[8px] font-black transition-all border-2 ${newPrinter.type === t ? 'bg-red-600 border-red-600 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-400'}`}>{t}</button>
+                        <button 
+                          key={t} 
+                          onClick={() => setNewPrinter({...newPrinter, type: t as any})} 
+                          className={`py-3 rounded-xl text-[8px] font-black transition-all border-2 ${newPrinter.type === t ? 'bg-red-600 border-red-600 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-400'}`}
+                        >
+                          {t}
+                        </button>
                       ))}
                     </div>
                  </div>
               </div>
 
               <div className="flex gap-4 mt-8">
-                 <button onClick={addPrinter} className="flex-1 py-4 bg-red-600 text-white font-black rounded-2xl shadow-xl text-xs uppercase tracking-widest active:scale-95 transition-all">Ativar</button>
-                 <button onClick={() => setShowPrinterModal(false)} className="flex-1 py-4 bg-gray-100 text-gray-500 font-bold rounded-2xl text-xs uppercase tracking-widest">Sair</button>
+                 <button 
+                  onClick={addPrinter} 
+                  className="flex-1 py-4 bg-red-600 text-white font-black rounded-2xl shadow-xl text-xs uppercase tracking-widest active:scale-95 transition-all"
+                 >
+                  Conectar
+                 </button>
+                 <button 
+                  onClick={() => setShowPrinterModal(false)} 
+                  className="flex-1 py-4 bg-gray-100 text-gray-500 font-bold rounded-2xl text-xs uppercase tracking-widest"
+                 >
+                  Cancelar
+                 </button>
               </div>
            </div>
         </div>

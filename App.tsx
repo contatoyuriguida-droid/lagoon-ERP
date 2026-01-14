@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, Check } from 'lucide-react';
+import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, Check, Printer as PrinterIcon } from 'lucide-react';
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 // @ts-ignore
@@ -15,9 +15,6 @@ import CRM from './pages/CRM.tsx';
 import Settings from './pages/Settings.tsx';
 import ArchitectInfo from './pages/ArchitectInfo.tsx';
 
-// ========================================================
-// CONFIGURAÇÃO OFICIAL DO LAGOON ERP
-// ========================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBci24rNuL9-cFlLomJa6UzMPj8SM-YJ-g",
   authDomain: "lagoon-erp.firebaseapp.com",
@@ -41,6 +38,7 @@ const App: React.FC = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
+  const [lastPrintJob, setLastPrintJob] = useState<string | null>(null);
 
   const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -50,52 +48,45 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // Referência para contar pedidos e evitar beep no load inicial
   const lastOrderCount = useRef<number>(-1);
 
-  // --- MOTOR DE ÁUDIO (BEEP) ---
+  // --- SERVIÇO DE IMPRESSÃO IP (SIMULADO) ---
+  const sendToPrinter = useCallback((type: 'COZINHA' | 'BAR' | 'CAIXA', content: string) => {
+    const targetPrinter = printers.find(p => p.type === type && p.status === 'ONLINE') || printers.find(p => p.type === 'CAIXA');
+    
+    if (!targetPrinter) {
+      console.warn(`Nenhuma impressora configurada para ${type}`);
+      return;
+    }
+
+    setLastPrintJob(`Enviando para ${targetPrinter.name} (${targetPrinter.ip})...`);
+    
+    // Simula o delay de rede e o socket TCP na porta 9100
+    setTimeout(() => {
+      console.log(`[PRINTER ${targetPrinter.ip}:9100] ${content}`);
+      setLastPrintJob(null);
+    }, 1500);
+  }, [printers]);
+
+  // --- MOTOR DE ÁUDIO ---
   const playKdsBeep = useCallback(() => {
     if (!isSoundEnabled) return;
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-
       oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Nota Lá
-      oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.5);
-
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
       gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
       gainNode.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.05);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
-
       oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.5);
-    } catch (e) {
-      console.warn("Áudio não permitido");
-    }
+      oscillator.stop(audioCtx.currentTime + 0.3);
+    } catch (e) {}
   }, [isSoundEnabled]);
 
-  // --- MONITOR DE NOVOS PEDIDOS ---
-  useEffect(() => {
-    if (!isLoaded) return;
-    
-    const currentTotalOrders = tables.reduce((acc, table) => 
-      acc + table.orderItems.filter(i => i.status === OrderStatus.PREPARING || i.status === OrderStatus.PENDING).length
-    , 0);
-
-    // Se o contador aumentou e não é o carregamento inicial, toca o beep
-    if (lastOrderCount.current !== -1 && currentTotalOrders > lastOrderCount.current) {
-      playKdsBeep();
-    }
-    
-    lastOrderCount.current = currentTotalOrders;
-  }, [tables, isLoaded, playKdsBeep]);
-
-  // --- ESCUTADOR FIRESTORE ---
+  // --- CLOUD SYNC ---
   useEffect(() => {
     const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
       if (docSnap.exists()) {
@@ -118,11 +109,7 @@ const App: React.FC = () => {
         });
       }
       setIsLoaded(true);
-    }, (error: any) => {
-      console.error("Erro Cloud Sync:", error);
-      setIsLoaded(true);
     });
-
     return () => unsub();
   }, []);
 
@@ -133,7 +120,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("Falha ao salvar:", e);
     } finally {
-      setTimeout(() => setIsSyncing(false), 800);
+      setTimeout(() => setIsSyncing(false), 500);
     }
   }, []);
 
@@ -141,31 +128,13 @@ const App: React.FC = () => {
     if (isLoaded) {
       const timer = setTimeout(() => {
         persistToCloud({ products, transactions, customers, users, tables, printers, connections });
-      }, 1000);
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, [products, transactions, customers, users, tables, printers, connections, isLoaded, persistToCloud]);
 
-  // --- AUTH ---
-  const handlePinInput = (digit: string) => {
-    if (digit === 'C') {
-      setPinBuffer("");
-    } else if (digit === 'OK') {
-      const user = users.find(u => u.pin === pinBuffer);
-      if (user) {
-        setCurrentUser(user);
-        setActiveSection(ROLE_PERMISSIONS[user.role][0]);
-        setPinBuffer("");
-      } else {
-        alert("PIN Incorreto!");
-        setPinBuffer("");
-      }
-    } else {
-      if (pinBuffer.length < 6) setPinBuffer(prev => prev + digit);
-    }
-  };
-
-  const addOrderItem = useCallback((tableId: number, product: Product, qty: number) => {
+  // --- OPERAÇÕES ---
+  const addOrderItem = useCallback((tableId: number, product: Product, qty: number, comandaId?: string) => {
     setTables(prev => prev.map(t => {
       if (t.id === tableId) {
         const newItem: OrderItem = {
@@ -176,19 +145,26 @@ const App: React.FC = () => {
           quantity: qty,
           status: OrderStatus.PREPARING,
           paid: false,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          printed: false
         };
+
+        // Dispara impressão de produção baseado na categoria
+        const printerType = product.category.toLowerCase().includes('bebida') || product.category.toLowerCase().includes('drink') ? 'BAR' : 'COZINHA';
+        sendToPrinter(printerType, `PEDIDO MESA ${tableId}\nITEM: ${qty}x ${product.name}\nHORA: ${new Date().toLocaleTimeString()}`);
+
         return {
           ...t,
           status: TableStatus.OCCUPIED,
-          comandaId: t.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
+          comandaId: comandaId || t.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
           orderItems: [...t.orderItems, newItem],
           lastUpdate: Date.now()
         };
       }
       return t;
     }));
-  }, []);
+    playKdsBeep();
+  }, [sendToPrinter, playKdsBeep]);
 
   const finalizePayment = useCallback((tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
     const table = tables.find(t => t.id === tableId);
@@ -197,13 +173,11 @@ const App: React.FC = () => {
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
 
-    setProducts(prev => prev.map(p => {
-      const sold = itemsToPay.find(i => i.productId === p.id);
-      return sold ? { ...p, stock: Math.max(0, p.stock - sold.quantity), salesVolume: (p.salesVolume || 0) + sold.quantity } : p;
-    }));
+    // Imprime cupom fiscal (simulado)
+    sendToPrinter('CAIXA', `EXTRATO MESA ${tableId}\nTOTAL: R$ ${total.toFixed(2)}\nPAGO: R$ ${amount.toFixed(2)}\nMETODO: ${method}`);
 
     setTransactions(prev => [...prev, {
-      id: `tx-${Date.now()}`, tableId, amount: total, amountPaid: amount, change,
+      id: `tx-${Date.now()}`, tableId, comandaId: table.comandaId, amount: total, amountPaid: amount, change,
       paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now()
     }]);
 
@@ -220,16 +194,9 @@ const App: React.FC = () => {
       }
       return t;
     }));
-  }, [tables]);
+  }, [tables, sendToPrinter]);
 
-  if (!isLoaded) {
-    return (
-      <div className="loading-screen">
-        <div className="spinner"></div>
-        <div className="loading-text">Conectando Lagoon Cloud...</div>
-      </div>
-    );
-  }
+  if (!isLoaded) return <div className="loading-screen"><div className="spinner"></div></div>;
 
   if (!currentUser) {
     return (
@@ -238,98 +205,72 @@ const App: React.FC = () => {
           <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-red-200 mb-6">L</div>
           <h1 className="text-2xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
           <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-10">ERP Conectado</p>
-
-          <div className="w-full mb-8">
-            <div className="flex justify-center gap-3 mb-10">
-              {[0, 1, 2, 3].map((idx) => (
-                <div key={idx} className={`w-3 h-3 rounded-full transition-all duration-300 ${pinBuffer.length > idx ? 'bg-red-600 scale-125 shadow-lg shadow-red-200' : 'bg-gray-100'}`} />
-              ))}
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(key => (
-                <button key={key} onClick={() => handlePinInput(key.toString())} className={`h-14 rounded-xl flex items-center justify-center font-black text-lg active:scale-90 transition-all ${key === 'OK' ? 'bg-red-600 text-white shadow-lg' : key === 'C' ? 'bg-gray-50 text-gray-400' : 'bg-white border border-gray-100 text-gray-800 shadow-sm hover:border-red-600'}`}>
-                  {key}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 opacity-50">
-             {users.map(u => <span key={u.id} className="text-[8px] font-black uppercase text-gray-400">{u.name} ({u.pin})</span>)}
+          <div className="grid grid-cols-3 gap-4 w-full">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(key => (
+              <button key={key} onClick={() => {
+                if (key === 'C') setPinBuffer("");
+                else if (key === 'OK') {
+                   const u = users.find(u => u.pin === pinBuffer);
+                   if (u) setCurrentUser(u);
+                   else setPinBuffer("");
+                } else setPinBuffer(p => p + key);
+              }} className="h-14 rounded-xl flex items-center justify-center font-black text-lg bg-white border border-gray-100 text-gray-800 shadow-sm active:bg-red-600 active:text-white">
+                {key}
+              </button>
+            ))}
           </div>
         </div>
       </div>
     );
   }
 
-  const sidebarItems = NAVIGATION_ITEMS.filter(i => ROLE_PERMISSIONS[currentUser.role].includes(i.id));
-
   return (
     <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
+      {/* SIDEBAR */}
       <aside className={`hidden lg:flex flex-col bg-white border-r border-gray-100 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
         <div className="h-16 flex items-center px-6 border-b border-gray-50">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-black shrink-0">L</div>
+            <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-black">L</div>
             {isSidebarOpen && <span className="font-black text-xl text-red-600 tracking-tighter">Lagoon</span>}
           </div>
         </div>
         <nav className="flex-1 py-6 px-3 space-y-1">
-          {sidebarItems.map(item => (
-            <button key={item.id} onClick={() => setActiveSection(item.id)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${activeSection === item.id ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'text-gray-400 hover:bg-gray-50 hover:text-red-600'}`}>
-              <span className={activeSection === item.id ? 'text-white' : 'text-current'}>{item.icon}</span>
+          {NAVIGATION_ITEMS.filter(i => ROLE_PERMISSIONS[currentUser.role].includes(i.id)).map(item => (
+            <button key={item.id} onClick={() => setActiveSection(item.id)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${activeSection === item.id ? 'bg-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-red-600'}`}>
+              {item.icon}
               {isSidebarOpen && <span className="text-xs font-black uppercase tracking-wider">{item.label}</span>}
             </button>
           ))}
         </nav>
-        <div className="p-4 border-t border-gray-50">
-          <button onClick={() => setCurrentUser(null)} className="w-full flex items-center gap-3 p-3 text-gray-400 hover:text-red-600 rounded-xl transition-all">
-            <LogOut size={20} />
-            {isSidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest">Sair</span>}
-          </button>
-        </div>
       </aside>
 
+      {/* MAIN */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-6 z-30 shadow-sm">
+          <h2 className="text-[11px] font-black text-gray-800 uppercase tracking-[0.2em]">{activeSection}</h2>
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-2 text-gray-400"><Menu size={20} /></button>
-            <h2 className="text-[11px] font-black text-gray-800 uppercase tracking-[0.2em]">{NAVIGATION_ITEMS.find(i => i.id === activeSection)?.label}</h2>
-          </div>
-          
-          <div className="flex items-center gap-4">
-             <button onClick={() => setIsSoundEnabled(!isSoundEnabled)} className={`p-2 rounded-lg transition-colors ${isSoundEnabled ? 'text-red-600 bg-red-50' : 'text-gray-300 bg-gray-50'}`}>
-                <Volume2 size={18} />
+             {lastPrintJob && (
+               <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-full animate-pulse">
+                  <PrinterIcon size={12} />
+                  <span className="text-[9px] font-black uppercase">{lastPrintJob}</span>
+               </div>
+             )}
+             <button onClick={() => setIsSyncing(!isSyncing)} className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
+                <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500'}`} />
+                <span className="text-[9px] font-black text-gray-500 uppercase">{isSyncing ? 'Sincronizando' : 'Cloud Ativa'}</span>
              </button>
-
-             <div className="hidden sm:flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
-                <div className={`w-2 h-2 rounded-full transition-all duration-300 ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500'}`} />
-                <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter flex items-center gap-1">
-                   {isSyncing ? <RefreshCw size={10} className="animate-spin" /> : <Check size={10} className="text-green-600" />}
-                   {isSyncing ? 'Sincronizando...' : 'Cloud Ativa'}
-                </span>
-             </div>
-
-             <div className="flex items-center gap-3 pl-2 border-l border-gray-100">
-                <div className="hidden sm:flex flex-col text-right">
-                   <span className="text-[10px] font-black text-gray-900 leading-none">{currentUser.name}</span>
-                   <span className="text-[8px] font-black text-red-600 uppercase mt-1 tracking-widest">{currentUser.role}</span>
-                </div>
-                <div className="w-8 h-8 bg-red-600 text-white rounded-lg flex items-center justify-center font-black text-xs shadow-md">
-                   {currentUser.name[0]}
-                </div>
-             </div>
+             <button onClick={() => setCurrentUser(null)} className="p-2 text-gray-400 hover:text-red-600"><LogOut size={20} /></button>
           </div>
         </header>
 
         <main className="flex-1 overflow-auto p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto">
-            {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} />}
-            {activeSection === AppSection.POS && <POS tables={tables} setTables={setTables} products={products} customers={customers} onAddItems={addOrderItem} onFinalize={finalizePayment} onTransfer={(f,t) => {}} />}
+            {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} printers={printers} />}
+            {activeSection === AppSection.POS && <POS tables={tables} setTables={setTables} products={products} onAddItems={addOrderItem} onFinalize={finalizePayment} />}
             {activeSection === AppSection.KDS && <KDS tables={tables} setTables={setTables} />}
             {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={setProducts} />}
             {activeSection === AppSection.CRM && <CRM customers={customers} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
             {activeSection === AppSection.ARCHITECT && <ArchitectInfo />}
-          </div>
         </main>
       </div>
     </div>

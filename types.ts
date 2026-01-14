@@ -55,6 +55,7 @@ export interface OrderItem {
   status: OrderStatus;
   paid: boolean;
   timestamp: number;
+  printed?: boolean;
 }
 
 export interface Table {
@@ -92,9 +93,8 @@ export interface Printer {
   id: string;
   name: string;
   type: 'COZINHA' | 'CAIXA' | 'BAR';
-  connectionMethod: 'IP' | 'USB';
-  ip?: string;
-  usbVendorId?: string;
+  connectionMethod: 'IP';
+  ip: string;
   status: 'ONLINE' | 'OFFLINE';
   isDefault?: boolean;
 }
