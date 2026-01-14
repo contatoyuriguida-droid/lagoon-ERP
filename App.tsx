@@ -182,20 +182,43 @@ const App: React.FC = () => {
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
         <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-red-200 mb-6">L</div>
         <h1 className="text-2xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
         <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-10">Acesso Restrito</p>
+        
+        {/* PIN DISPLAY WITH DOTS */}
+        <div className="flex gap-4 mb-10">
+          {[0, 1, 2, 3].map((idx) => (
+            <div 
+              key={idx} 
+              className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
+                pinBuffer.length > idx ? 'bg-red-600 border-red-600 scale-125 shadow-lg shadow-red-100' : 'bg-transparent border-gray-200'
+              }`} 
+            />
+          ))}
+        </div>
+
         <div className="grid grid-cols-3 gap-4 w-full max-w-sm">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(key => (
-            <button key={key} onClick={() => {
-              if (key === 'C') setPinBuffer("");
-              else if (key === 'OK') {
-                const u = users.find(u => u.pin === pinBuffer);
-                if (u) setCurrentUser(u);
-                else setPinBuffer("");
-              } else setPinBuffer(p => p + key);
-            }} className="h-14 rounded-xl flex items-center justify-center font-black text-lg bg-white border border-gray-100 text-gray-800 shadow-sm active:bg-red-600 active:text-white">
+            <button 
+              key={key} 
+              onClick={() => {
+                if (key === 'C') setPinBuffer("");
+                else if (key === 'OK') {
+                  const u = users.find(u => u.pin === pinBuffer);
+                  if (u) {
+                    setCurrentUser(u);
+                    setPinBuffer("");
+                  } else {
+                    setPinBuffer("");
+                  }
+                } else {
+                  if (pinBuffer.length < 4) setPinBuffer(p => p + key);
+                }
+              }} 
+              className="h-16 rounded-2xl flex items-center justify-center font-black text-lg bg-white border border-gray-100 text-gray-800 shadow-sm hover:border-red-600 active:bg-red-600 active:text-white transition-all transform active:scale-95"
+            >
               {key}
             </button>
           ))}
@@ -224,7 +247,7 @@ const App: React.FC = () => {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-6 z-30 shadow-sm">
+        <header className="h-20 bg-white border-b border-gray-100 flex items-center justify-between px-6 z-30 shadow-sm">
           <h2 className="text-[11px] font-black text-gray-800 uppercase tracking-[0.2em]">{activeSection}</h2>
           <div className="flex items-center gap-6">
              {lastPrintJob && (
@@ -235,22 +258,27 @@ const App: React.FC = () => {
              )}
              <div className="hidden md:flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
                 <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500'}`} />
-                <span className="text-[9px] font-black text-gray-500 uppercase">Cloud</span>
+                <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">Conectado</span>
              </div>
              
-             {/* USER INFO BLOCK */}
-             <div className="flex items-center gap-3 pl-4 border-l border-gray-100">
-                <div className="text-right hidden xs:block">
-                   <p className="text-[11px] font-black text-gray-900 leading-none">{currentUser.name}</p>
-                   <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md mt-1 inline-block ${
+             {/* USER INFO BLOCK - REFINED FOR VISIBILITY */}
+             <div className="flex items-center gap-4 pl-6 border-l border-gray-100">
+                <div className="text-right hidden sm:block">
+                   <p className="text-[13px] font-black text-gray-900 leading-none mb-1">{currentUser.name}</p>
+                   <span className={`text-[9px] font-black uppercase tracking-[0.1em] px-2 py-1 rounded-full inline-block shadow-sm ${
                       currentUser.role === UserRole.ADMIN ? 'bg-red-600 text-white' : 
-                      currentUser.role === UserRole.MANAGER ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500'
+                      currentUser.role === UserRole.MANAGER ? 'bg-gray-800 text-white' : 
+                      currentUser.role === UserRole.CHEF ? 'bg-orange-500 text-white' : 'bg-blue-600 text-white'
                    }`}>{currentUser.role}</span>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-600 font-black border border-red-100">
-                   {currentUser.name[0]}
+                <div className="relative group cursor-pointer">
+                  <div className="w-10 h-10 rounded-2xl bg-red-600 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-red-100 border border-red-700 transition-transform hover:scale-105">
+                    {currentUser.name[0]}
+                  </div>
                 </div>
-                <button onClick={() => setCurrentUser(null)} className="p-1.5 text-gray-300 hover:text-red-600 transition-colors"><LogOut size={18} /></button>
+                <button onClick={() => setCurrentUser(null)} className="p-2 text-gray-300 hover:text-red-600 transition-all hover:bg-red-50 rounded-xl" title="Sair do terminal">
+                   <LogOut size={20} />
+                </button>
              </div>
           </div>
         </header>
