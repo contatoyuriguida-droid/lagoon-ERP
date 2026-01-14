@@ -41,16 +41,15 @@ const App: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
-  const [tables, setTables] = useState<Table[]>([]);
+  const [statusTables, setTables] = useState<Table[]>([]);
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // Refs para evitar closures obsoletas e garantir dados reais no momento do Sync
   const tablesRef = useRef<Table[]>([]);
   const transactionsRef = useRef<Transaction[]>([]);
   const productsRef = useRef<Product[]>([]);
   
-  useEffect(() => { tablesRef.current = tables; }, [tables]);
+  useEffect(() => { tablesRef.current = statusTables; }, [statusTables]);
   useEffect(() => { transactionsRef.current = transactions; }, [transactions]);
   useEffect(() => { productsRef.current = products; }, [products]);
 
@@ -58,12 +57,9 @@ const App: React.FC = () => {
   const lastSyncTimeRef = useRef(0);
 
   const persistToCloud = useCallback(async (overrides?: any) => {
-    // Se estivermos em meio a uma escrita crítica, ignoramos outras tentativas por 1s
     if (isWritingRef.current && !overrides?.priority) return;
-    
     isWritingRef.current = true;
     setIsSyncing(true);
-    
     const now = Date.now();
     const currentState = {
       products: productsRef.current,
@@ -75,14 +71,12 @@ const App: React.FC = () => {
       connections,
       lastGlobalUpdate: now
     };
-
     try {
       await setDoc(doc(db, DOC_PATH), currentState);
       lastSyncTimeRef.current = now;
     } catch (e) {
       console.error("Sync Error:", e);
     } finally {
-      // Pequeno delay para garantir que o onSnapshot não processe a própria escrita de forma circular
       setTimeout(() => {
         isWritingRef.current = false;
         setIsSyncing(false);
@@ -92,9 +86,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
-      // Ignora atualizações da nuvem se este terminal acabou de enviar uma
       if (isWritingRef.current) return;
-
       if (docSnap.exists()) {
         const cloud = docSnap.data();
         if (cloud.lastGlobalUpdate && cloud.lastGlobalUpdate > lastSyncTimeRef.current) {
@@ -118,6 +110,18 @@ const App: React.FC = () => {
     });
     return () => unsub();
   }, [persistToCloud]);
+
+  const handleLogin = (u: User) => {
+    setCurrentUser(u);
+    setPinBuffer("");
+    // REDIRECIONAMENTO INTELIGENTE: Garçom vai direto pro POS
+    if (u.role === UserRole.WAITER) {
+      setActiveSection(AppSection.POS);
+      setIsSidebarOpen(false); // No mobile, fecha a sidebar para ganhar espaço
+    } else {
+      setActiveSection(AppSection.DASHBOARD);
+    }
+  };
 
   const addOrderItem = useCallback((tableId: number, product: Product, qty: number, comandaId?: string) => {
     const newTables = tablesRef.current.map(t => {
@@ -144,33 +148,21 @@ const App: React.FC = () => {
   const finalizePayment = useCallback((tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
     const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
-
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
-    
     const newTx: Transaction = {
       id: `tx-${Date.now()}`, tableId, comandaId: table.comandaId, amount: total, amountPaid: amount, change,
       paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now()
     };
-    
     const newTransactions = [...transactionsRef.current, newTx];
     const newTables = tablesRef.current.map(t => {
       if (t.id === tableId) {
         const remaining = t.orderItems.filter(i => !itemIds.includes(i.id));
         const isNowAvailable = remaining.length === 0;
-        return {
-          ...t,
-          orderItems: remaining,
-          status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
-          // Forçamos a limpeza da comanda se não houver itens
-          comandaId: isNowAvailable ? "" : t.comandaId,
-          lastUpdate: Date.now()
-        };
+        return { ...t, orderItems: remaining, status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED, comandaId: isNowAvailable ? "" : t.comandaId, lastUpdate: Date.now() };
       }
       return t;
     });
-
-    // Atualização imediata local e remota com alta prioridade
     setTransactions(newTransactions);
     setTables(newTables);
     persistToCloud({ tables: newTables, transactions: newTransactions, priority: true });
@@ -179,13 +171,7 @@ const App: React.FC = () => {
   const markItemAsReady = useCallback((tableId: number, itemId: string) => {
     const newTables = tablesRef.current.map(t => {
       if (t.id === tableId) {
-        return {
-          ...t,
-          orderItems: t.orderItems.map(oi => 
-            oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi
-          ),
-          lastUpdate: Date.now()
-        };
+        return { ...t, orderItems: t.orderItems.map(oi => oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi), lastUpdate: Date.now() };
       }
       return t;
     });
@@ -193,9 +179,17 @@ const App: React.FC = () => {
     persistToCloud({ tables: newTables, priority: true });
   }, [persistToCloud]);
 
+  // Fix: Implemented handleAddNewTable to allow adding new tables dynamically
   const handleAddNewTable = useCallback(() => {
     const nextId = tablesRef.current.length > 0 ? Math.max(...tablesRef.current.map(t => t.id)) + 1 : 1;
-    const newTables = [...tablesRef.current, { id: nextId, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() }];
+    const newTable: Table = {
+      id: nextId,
+      status: TableStatus.AVAILABLE,
+      orderItems: [],
+      customerCount: 0,
+      lastUpdate: Date.now()
+    };
+    const newTables = [...tablesRef.current, newTable];
     setTables(newTables);
     persistToCloud({ tables: newTables, priority: true });
   }, [persistToCloud]);
@@ -204,34 +198,37 @@ const App: React.FC = () => {
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center overflow-hidden">
         <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl mb-6">L</div>
         <h1 className="text-3xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
         <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-10">Terminal Operacional Cloud</p>
-        <div className="flex gap-6 mb-12">
+        <div className="flex gap-4 mb-12">
           {[0, 1, 2, 3].map((idx) => (
-            <div key={idx} className={`w-6 h-6 rounded-full border-4 transition-all duration-300 ${pinBuffer.length > idx ? 'bg-red-600 border-red-600 scale-125' : 'bg-gray-100 border-gray-200'}`} />
+            <div key={idx} className={`w-5 h-5 rounded-full border-4 transition-all duration-300 ${pinBuffer.length > idx ? 'bg-red-600 border-red-600 scale-125 shadow-lg shadow-red-200' : 'bg-gray-100 border-gray-200'}`} />
           ))}
         </div>
-        <div className="grid grid-cols-3 gap-5 w-full max-w-sm">
+        <div className="grid grid-cols-3 gap-3 w-full max-w-[320px]">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(key => (
             <button key={key} onClick={() => {
               if (key === 'C') setPinBuffer("");
               else if (key === 'OK') {
                 const u = users.find(u => u.pin === pinBuffer);
-                if (u) { setCurrentUser(u); setPinBuffer(""); }
+                if (u) handleLogin(u);
                 else setPinBuffer("");
               } else if (pinBuffer.length < 4) setPinBuffer(p => p + String(key));
-            }} className="h-16 rounded-3xl flex items-center justify-center font-black text-xl bg-white border-2 border-gray-50 text-gray-800 shadow-sm active:bg-red-600 active:text-white transform active:scale-90 transition-all">{key}</button>
+            }} className="h-16 rounded-2xl flex items-center justify-center font-black text-xl bg-white border-2 border-gray-100 text-gray-800 shadow-sm active:bg-red-600 active:text-white transform active:scale-95 transition-all select-none">{key}</button>
           ))}
         </div>
       </div>
     );
   }
 
+  const allowedSections = ROLE_PERMISSIONS[currentUser.role];
+
   return (
     <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
-      <aside className={`hidden lg:flex flex-col bg-white border-r border-gray-100 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+      {/* Sidebar - Oculta por padrão para garçons no mobile */}
+      <aside className={`${isSidebarOpen ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-r border-gray-100 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
         <div className="h-16 flex items-center px-6 border-b border-gray-50">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-black">L</div>
@@ -239,7 +236,7 @@ const App: React.FC = () => {
           </div>
         </div>
         <nav className="flex-1 py-6 px-3 space-y-1">
-          {NAVIGATION_ITEMS.filter(i => ROLE_PERMISSIONS[currentUser.role].includes(i.id)).map(item => (
+          {NAVIGATION_ITEMS.filter(i => allowedSections.includes(i.id)).map(item => (
             <button key={item.id} onClick={() => setActiveSection(item.id)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${activeSection === item.id ? 'bg-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-red-600'}`}>
               {item.icon}
               {isSidebarOpen && <span className="text-xs font-black uppercase tracking-wider">{item.label}</span>}
@@ -249,30 +246,38 @@ const App: React.FC = () => {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-24 bg-white border-b border-gray-100 flex items-center justify-between px-8 z-30 shadow-sm">
-          <h2 className="text-[12px] font-black text-gray-800 uppercase tracking-[0.3em]">{activeSection}</h2>
-          <div className="flex items-center gap-6">
-             <div className="hidden md:flex items-center gap-2 bg-green-50 px-4 py-2 rounded-full border border-green-100">
-                <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500 shadow-sm'}`} />
-                <span className="text-[10px] font-black text-green-700 uppercase tracking-widest">Ativo</span>
+        <header className="h-20 lg:h-24 bg-white border-b border-gray-100 flex items-center justify-between px-4 lg:px-8 z-30 shadow-sm">
+          <div className="flex items-center gap-4">
+             {allowedSections.length > 1 && (
+               <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-gray-400 lg:hidden">
+                 <Menu size={24} />
+               </button>
+             )}
+             <h2 className="text-[10px] lg:text-[12px] font-black text-gray-800 uppercase tracking-[0.2em]">{activeSection}</h2>
+          </div>
+          
+          <div className="flex items-center gap-3 lg:gap-6">
+             <div className="hidden sm:flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
+                <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-blue-500 animate-pulse' : 'bg-green-500 shadow-sm'}`} />
+                <span className="text-[9px] font-black text-green-700 uppercase tracking-widest">Ativo</span>
              </div>
-             <div className="flex items-center gap-5 pl-6 border-l-2 border-gray-100">
-                <div className="text-right">
-                   <p className="text-[14px] font-black text-gray-900 leading-none mb-1">{currentUser.name}</p>
-                   <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white ${currentUser.role === UserRole.ADMIN ? 'bg-red-600' : currentUser.role === UserRole.MANAGER ? 'bg-gray-800' : 'bg-blue-600'}`}>
+             <div className="flex items-center gap-3 lg:gap-5 pl-3 lg:pl-6 border-l-2 border-gray-100">
+                <div className="text-right hidden xs:block">
+                   <p className="text-[12px] lg:text-[14px] font-black text-gray-900 leading-none mb-1">{currentUser.name}</p>
+                   <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest text-white ${currentUser.role === UserRole.ADMIN ? 'bg-red-600' : 'bg-blue-600'}`}>
                       {currentUser.role}
                    </div>
                 </div>
-                <div className="w-12 h-12 rounded-2xl bg-red-600 flex items-center justify-center text-white font-black text-xl shadow-lg">{currentUser.name[0]}</div>
-                <button onClick={() => setCurrentUser(null)} className="p-3 text-gray-400 hover:text-red-600 transition-all"><LogOut size={22} /></button>
+                <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-red-600 flex items-center justify-center text-white font-black text-lg lg:text-xl shadow-lg">{currentUser.name[0]}</div>
+                <button onClick={() => setCurrentUser(null)} className="p-2 lg:p-3 text-gray-400 hover:text-red-600 transition-all"><LogOut size={20} /></button>
              </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-4 lg:p-10">
+        <main className="flex-1 overflow-auto p-3 lg:p-10">
             {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} printers={printers} />}
-            {activeSection === AppSection.POS && <POS currentUser={currentUser} tables={tables} products={products} onAddItems={addOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} />}
-            {activeSection === AppSection.KDS && <KDS tables={tables} onMarkReady={markItemAsReady} />}
+            {activeSection === AppSection.POS && <POS currentUser={currentUser} tables={statusTables} products={products} onAddItems={addOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} />}
+            {activeSection === AppSection.KDS && <KDS tables={statusTables} onMarkReady={markItemAsReady} />}
             {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={(newProds) => { 
                 const updated = typeof newProds === 'function' ? newProds(products) : newProds;
                 setProducts(updated);
