@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, Menu, X, LogOut, ChevronRight, Lock } from 'lucide-react';
+import { Bell, Menu, X, LogOut, ChevronRight, Lock, CloudCheck, CloudOff } from 'lucide-react';
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 // @ts-ignore
@@ -16,37 +15,35 @@ import CRM from './pages/CRM.tsx';
 import Settings from './pages/Settings.tsx';
 import ArchitectInfo from './pages/ArchitectInfo.tsx';
 
-// CONFIGURAÇÃO FIREBASE (SUBSTITUA PELAS SUAS CHAVES REAIS)
+// ========================================================
+// CONFIGURAÇÃO OFICIAL DO LAGOON ERP
+// ========================================================
 const firebaseConfig = {
-  apiKey: "demo-key-lagoon",
-  authDomain: "lagoon-gastrobar.firebaseapp.com",
-  projectId: "lagoon-gastrobar",
-  storageBucket: "lagoon-gastrobar.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef"
+  apiKey: "AIzaSyBci24rNuL9-cFlLomJa6UzMPj8SM-YJ-g",
+  authDomain: "lagoon-erp.firebaseapp.com",
+  projectId: "lagoon-erp",
+  storageBucket: "lagoon-erp.firebasestorage.app",
+  messagingSenderId: "1026563692982",
+  appId: "1:1026563692982:web:f28ef0b5a54e98699a0917",
+  measurementId: "G-X7YJ36KZQN"
 };
 
-// Singleton para Firebase
-let db: any = null;
-try {
-  const app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-} catch (e) {
-  console.warn("Erro ao inicializar Firebase. Operando em modo local.");
-}
-
-const DOC_PATH = "system/data";
+// Inicialização do Firebase Firestore
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const DOC_PATH = "lagoon/system_state";
 
 const App: React.FC = () => {
-  // --- AUTH STATE ---
+  // --- UI & AUTH ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [pinBuffer, setPinBuffer] = useState<string>("");
   const [activeSection, setActiveSection] = useState<AppSection>(AppSection.DASHBOARD);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // --- BUSINESS STATE ---
+  // --- DATA STATES ---
   const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -55,77 +52,61 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // --- FIREBASE SYNC & INITIALIZATION ---
+  // --- ESCUTADOR EM TEMPO REAL (FIRESTORE) ---
   useEffect(() => {
-    let unsub = () => {};
-
-    // Timer de segurança para evitar loading infinito
-    const safetyTimeout = setTimeout(() => {
-      if (!isLoaded) {
-        console.warn("Firebase demorou demais. Carregando dados locais.");
-        // Inicializa tabelas se não carregou
-        if (tables.length === 0) {
-          const initialTables = Array.from({ length: 24 }, (_, i) => ({ 
-            id: i + 1, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() 
-          }));
-          setTables(initialTables);
-        }
-        setIsLoaded(true);
+    const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
+      if (docSnap.exists()) {
+        const cloud = docSnap.data();
+        if (cloud.products) setProducts(cloud.products);
+        if (cloud.transactions) setTransactions(cloud.transactions);
+        if (cloud.customers) setCustomers(cloud.customers);
+        if (cloud.users) setUsers(cloud.users);
+        if (cloud.tables) setTables(cloud.tables);
+        if (cloud.printers) setPrinters(cloud.printers);
+        if (cloud.connections) setConnections(cloud.connections);
+      } else {
+        // Se o banco estiver vazio (primeiro acesso), cria o estado inicial
+        const initTables = Array.from({ length: 24 }, (_, i) => ({ 
+          id: i + 1, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() 
+        }));
+        setTables(initTables);
+        persistToCloud({ 
+          products: MOCK_PRODUCTS, users: INITIAL_USERS, tables: initTables, 
+          transactions: [], customers: [], printers: [], connections: [] 
+        });
       }
-    }, 3000);
-
-    if (db) {
-      unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
-        clearTimeout(safetyTimeout);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setProducts(data.products || MOCK_PRODUCTS);
-          setTransactions(data.transactions || []);
-          setCustomers(data.customers || []);
-          setUsers(data.users || INITIAL_USERS);
-          setTables(data.tables || Array.from({ length: 24 }, (_, i) => ({ id: i + 1, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() })));
-          setPrinters(data.printers || []);
-          setConnections(data.connections || []);
-        } else {
-          const initialTables = Array.from({ length: 24 }, (_, i) => ({ id: i + 1, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() }));
-          setTables(initialTables);
-        }
-        setIsLoaded(true);
-      }, (error: any) => {
-        console.error("Erro no Firestore Listener:", error);
-        setIsLoaded(true);
-      });
-    } else {
       setIsLoaded(true);
-    }
+    }, (error: any) => {
+      console.error("Erro Cloud Sync:", error);
+      setIsLoaded(true);
+    });
 
-    return () => {
-      unsub();
-      clearTimeout(safetyTimeout);
-    };
-  }, [isLoaded, tables.length]);
+    return () => unsub();
+  }, []);
 
-  // --- PERSISTENCE HELPER ---
-  const syncToCloud = useCallback(async (updates: any) => {
-    if (!db) return;
+  // --- FUNÇÃO DE PERSISTÊNCIA ---
+  const persistToCloud = useCallback(async (data: any) => {
+    setIsSyncing(true);
     try {
-      await setDoc(doc(db, DOC_PATH), updates, { merge: true });
+      await setDoc(doc(db, DOC_PATH), data, { merge: true });
     } catch (e) {
-      console.error("Erro ao sincronizar dados:", e);
+      console.error("Falha ao salvar na nuvem:", e);
+    } finally {
+      setTimeout(() => setIsSyncing(false), 500);
     }
   }, []);
 
-  // Sync Debounced
+  // Auto-save debounced (Salva 1s após a última mudança local)
   useEffect(() => {
-    if (isLoaded && db) {
-      const timeout = setTimeout(() => {
-        syncToCloud({ products, transactions, customers, users, tables, printers, connections });
-      }, 2000);
-      return () => clearTimeout(timeout);
+    if (isLoaded) {
+      const timer = setTimeout(() => {
+        persistToCloud({ products, transactions, customers, users, tables, printers, connections });
+      }, 1000);
+      return () => clearTimeout(timer);
     }
-  }, [products, transactions, customers, users, tables, printers, connections, isLoaded, syncToCloud]);
+  }, [products, transactions, customers, users, tables, printers, connections, isLoaded, persistToCloud]);
 
-  // --- ACTIONS ---
+  // --- AUTH ---
   const handlePinInput = (digit: string) => {
     if (digit === 'C') {
       setPinBuffer("");
@@ -133,11 +114,10 @@ const App: React.FC = () => {
       const user = users.find(u => u.pin === pinBuffer);
       if (user) {
         setCurrentUser(user);
-        const allowed = ROLE_PERMISSIONS[user.role];
-        setActiveSection(allowed[0]);
+        setActiveSection(ROLE_PERMISSIONS[user.role][0]);
         setPinBuffer("");
       } else {
-        alert("PIN inválido!");
+        alert("PIN Incorreto!");
         setPinBuffer("");
       }
     } else {
@@ -145,17 +125,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setPinBuffer("");
-    setIsMobileMenuOpen(false);
-  };
-
   const addOrderItem = useCallback((tableId: number, product: Product, qty: number) => {
     setTables(prev => prev.map(t => {
       if (t.id === tableId) {
         const newItem: OrderItem = {
-          id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           productId: product.id,
           name: product.name,
           price: product.price,
@@ -177,59 +151,30 @@ const App: React.FC = () => {
   }, []);
 
   const finalizePayment = useCallback((tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
-    const targetTable = tables.find(t => t.id === tableId);
-    if (!targetTable) return;
+    const table = tables.find(t => t.id === tableId);
+    if (!table) return;
 
-    const itemsToPay = targetTable.orderItems.filter(i => itemIds.includes(i.id));
-    const totalPaid = itemsToPay.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+    const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
+    const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
 
     setProducts(prev => prev.map(p => {
-      const soldItem = itemsToPay.find(i => i.productId === p.id);
-      if (soldItem) {
-        return { ...p, stock: Math.max(0, p.stock - soldItem.quantity), salesVolume: (p.salesVolume || 0) + soldItem.quantity };
-      }
-      return p;
+      const sold = itemsToPay.find(i => i.productId === p.id);
+      return sold ? { ...p, stock: Math.max(0, p.stock - sold.quantity), salesVolume: (p.salesVolume || 0) + sold.quantity } : p;
     }));
 
-    const newTx: Transaction = {
-      id: `tx-${Date.now()}`,
-      tableId,
-      amount: totalPaid,
-      amountPaid: amount,
-      change,
-      paymentMethod: method,
-      itemsCount: itemIds.length,
-      timestamp: Date.now()
-    };
-    setTransactions(prev => [...prev, newTx]);
+    setTransactions(prev => [...prev, {
+      id: `tx-${Date.now()}`, tableId, amount: total, amountPaid: amount, change,
+      paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now()
+    }]);
 
     setTables(prev => prev.map(t => {
       if (t.id === tableId) {
-        const remaining = t.orderItems.filter(i => !itemIds.includes(i.id));
+        const rem = t.orderItems.filter(i => !itemIds.includes(i.id));
         return {
           ...t,
-          orderItems: remaining,
-          status: remaining.length === 0 ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
-          comandaId: remaining.length === 0 ? undefined : t.comandaId,
-          lastUpdate: Date.now()
-        };
-      }
-      return t;
-    }));
-  }, [tables]);
-
-  const transferItems = useCallback((fromId: number, toId: number) => {
-    const fromTable = tables.find(t => t.id === fromId);
-    if (!fromTable || fromTable.orderItems.length === 0) return;
-
-    setTables(prev => prev.map(t => {
-      if (t.id === fromId) return { ...t, orderItems: [], status: TableStatus.AVAILABLE, comandaId: undefined, lastUpdate: Date.now() };
-      if (t.id === toId) {
-        return {
-          ...t,
-          orderItems: [...t.orderItems, ...fromTable.orderItems],
-          status: TableStatus.OCCUPIED,
-          comandaId: t.comandaId || fromTable.comandaId,
+          orderItems: rem,
+          status: rem.length === 0 ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
+          comandaId: rem.length === 0 ? undefined : t.comandaId,
           lastUpdate: Date.now()
         };
       }
@@ -241,7 +186,7 @@ const App: React.FC = () => {
     return (
       <div className="loading-screen">
         <div className="spinner"></div>
-        <div className="loading-text">Sincronizando Lagoon...</div>
+        <div className="loading-text">Conectando Lagoon Cloud...</div>
       </div>
     );
   }
@@ -252,34 +197,31 @@ const App: React.FC = () => {
         <div className="w-full max-w-sm flex flex-col items-center">
           <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-red-200 mb-6">L</div>
           <h1 className="text-2xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
-          <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-10">Acesso Restrito</p>
+          <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-10">ERP Sincronizado</p>
 
           <div className="w-full mb-8">
-            <div className="flex justify-center gap-3 mb-8">
+            <div className="flex justify-center gap-3 mb-10">
               {[0, 1, 2, 3].map((idx) => (
-                <div key={idx} className={`w-3 h-3 rounded-full transition-all ${pinBuffer.length > idx ? 'bg-red-600 scale-125' : 'bg-gray-200'}`} />
+                <div key={idx} className={`w-3 h-3 rounded-full transition-all duration-300 ${pinBuffer.length > idx ? 'bg-red-600 scale-125 shadow-lg shadow-red-200' : 'bg-gray-100'}`} />
               ))}
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-4">
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(key => (
-                <button key={key} onClick={() => handlePinInput(key.toString())} className={`h-16 rounded-2xl flex items-center justify-center font-bold text-lg active:scale-90 transition-all ${key === 'OK' ? 'bg-red-600 text-white' : key === 'C' ? 'bg-gray-100 text-gray-400' : 'bg-white border border-gray-100 text-gray-800 shadow-sm'}`}>
+                <button key={key} onClick={() => handlePinInput(key.toString())} className={`h-14 rounded-xl flex items-center justify-center font-black text-lg active:scale-90 transition-all ${key === 'OK' ? 'bg-red-600 text-white shadow-lg' : key === 'C' ? 'bg-gray-50 text-gray-400' : 'bg-white border border-gray-100 text-gray-800 shadow-sm hover:border-red-600'}`}>
                   {key}
                 </button>
               ))}
             </div>
           </div>
-          <div className="flex flex-wrap justify-center gap-2">
-            {users.map(u => (
-               <button key={u.id} onClick={() => { setPinBuffer(u.pin); handlePinInput('OK'); }} className="text-[9px] font-black text-gray-300 uppercase hover:text-red-600 transition-colors">{u.name}</button>
-            ))}
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 opacity-50">
+             {users.map(u => <span key={u.id} className="text-[8px] font-black uppercase text-gray-400">{u.name} ({u.pin})</span>)}
           </div>
         </div>
       </div>
     );
   }
 
-  const allowedSections = ROLE_PERMISSIONS[currentUser.role];
-  const sidebarItems = NAVIGATION_ITEMS.filter(i => allowedSections.includes(i.id));
+  const sidebarItems = NAVIGATION_ITEMS.filter(i => ROLE_PERMISSIONS[currentUser.role].includes(i.id));
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
@@ -287,44 +229,56 @@ const App: React.FC = () => {
         <div className="h-16 flex items-center px-6 border-b border-gray-50">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center text-white font-black shrink-0">L</div>
-            {isSidebarOpen && <span className="font-black text-xl text-red-600">Lagoon</span>}
+            {isSidebarOpen && <span className="font-black text-xl text-red-600 tracking-tighter">Lagoon</span>}
           </div>
         </div>
-        <nav className="flex-1 py-4 px-3 space-y-1">
+        <nav className="flex-1 py-6 px-3 space-y-1">
           {sidebarItems.map(item => (
-            <button key={item.id} onClick={() => setActiveSection(item.id)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${activeSection === item.id ? 'bg-red-600 text-white' : 'text-gray-400 hover:bg-gray-50'}`}>
-              <span className={activeSection === item.id ? 'text-white' : 'text-gray-400'}>{item.icon}</span>
-              {isSidebarOpen && <span className="text-sm font-bold">{item.label}</span>}
+            <button key={item.id} onClick={() => setActiveSection(item.id)} className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${activeSection === item.id ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'text-gray-400 hover:bg-gray-50 hover:text-red-600'}`}>
+              <span className={activeSection === item.id ? 'text-white' : 'text-current'}>{item.icon}</span>
+              {isSidebarOpen && <span className="text-xs font-black uppercase tracking-wider">{item.label}</span>}
             </button>
           ))}
         </nav>
         <div className="p-4 border-t border-gray-50">
-          <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 text-gray-400 hover:text-red-600 rounded-xl transition-all">
+          <button onClick={() => setCurrentUser(null)} className="w-full flex items-center gap-3 p-3 text-gray-400 hover:text-red-600 rounded-xl transition-all">
             <LogOut size={20} />
-            {isSidebarOpen && <span className="text-xs font-bold uppercase">Sair</span>}
+            {isSidebarOpen && <span className="text-[10px] font-black uppercase tracking-widest">Sair</span>}
           </button>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-6 z-30">
+        <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-6 z-30 shadow-sm">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-2 text-gray-400"><Menu size={20} /></button>
-            <h2 className="text-sm font-black text-gray-800 uppercase tracking-tighter">{NAVIGATION_ITEMS.find(i => i.id === activeSection)?.label}</h2>
+            <h2 className="text-[11px] font-black text-gray-800 uppercase tracking-[0.2em]">{NAVIGATION_ITEMS.find(i => i.id === activeSection)?.label}</h2>
           </div>
-          <div className="flex items-center gap-3">
-             <div className="hidden sm:flex flex-col text-right">
-                <span className="text-[10px] font-black text-gray-900 leading-none">{currentUser.name}</span>
-                <span className="text-[8px] font-black text-red-600 uppercase mt-1">Cloud {db ? 'Ativo' : 'Local'}</span>
+          
+          <div className="flex items-center gap-4">
+             <div className="hidden sm:flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
+                <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`} />
+                <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">
+                   {isSyncing ? 'Sincronizando...' : 'Cloud Ativa'}
+                </span>
              </div>
-             <div className="w-8 h-8 bg-red-50 text-red-600 rounded-lg flex items-center justify-center font-black text-xs">{currentUser.name[0]}</div>
+
+             <div className="flex items-center gap-3 pl-2 border-l border-gray-100">
+                <div className="hidden sm:flex flex-col text-right">
+                   <span className="text-[10px] font-black text-gray-900 leading-none">{currentUser.name}</span>
+                   <span className="text-[8px] font-black text-red-600 uppercase mt-1 tracking-widest">{currentUser.role}</span>
+                </div>
+                <div className="w-8 h-8 bg-red-600 text-white rounded-lg flex items-center justify-center font-black text-xs shadow-md">
+                   {currentUser.name[0]}
+                </div>
+             </div>
           </div>
         </header>
 
         <main className="flex-1 overflow-auto p-4 lg:p-8">
           <div className="max-w-7xl mx-auto">
             {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} />}
-            {activeSection === AppSection.POS && <POS tables={tables} setTables={setTables} products={products} customers={customers} onAddItems={addOrderItem} onFinalize={finalizePayment} onTransfer={transferItems} />}
+            {activeSection === AppSection.POS && <POS tables={tables} setTables={setTables} products={products} customers={customers} onAddItems={addOrderItem} onFinalize={finalizePayment} onTransfer={(f,t) => {}} />}
             {activeSection === AppSection.KDS && <KDS tables={tables} setTables={setTables} />}
             {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={setProducts} />}
             {activeSection === AppSection.CRM && <CRM customers={customers} />}
@@ -333,25 +287,6 @@ const App: React.FC = () => {
           </div>
         </main>
       </div>
-
-      {isMobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-[100]">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
-          <div className="absolute inset-y-0 left-0 w-64 bg-white p-6 shadow-2xl animate-in slide-in-from-left">
-            <div className="flex items-center justify-between mb-8">
-              <span className="font-black text-xl text-red-600">Lagoon</span>
-              <button onClick={() => setIsMobileMenuOpen(false)}><X size={24} /></button>
-            </div>
-            <nav className="space-y-2">
-              {sidebarItems.map(item => (
-                <button key={item.id} onClick={() => { setActiveSection(item.id); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold ${activeSection === item.id ? 'bg-red-600 text-white' : 'text-gray-400'}`}>
-                  {item.icon} {item.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
