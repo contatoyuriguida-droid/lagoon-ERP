@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Bell, Menu, X, LogOut, ChevronRight, Lock, CloudCheck, CloudOff, RefreshCw, Volume2 } from 'lucide-react';
+import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, Check } from 'lucide-react';
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 // @ts-ignore
@@ -75,7 +75,7 @@ const App: React.FC = () => {
       oscillator.start();
       oscillator.stop(audioCtx.currentTime + 0.5);
     } catch (e) {
-      console.warn("Áudio bloqueado pelo navegador");
+      console.warn("Áudio não permitido");
     }
   }, [isSoundEnabled]);
 
@@ -237,7 +237,7 @@ const App: React.FC = () => {
         <div className="w-full max-w-sm flex flex-col items-center">
           <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-red-200 mb-6">L</div>
           <h1 className="text-2xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
-          <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-10">Cloud ERP Ativo</p>
+          <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-10">ERP Conectado</p>
 
           <div className="w-full mb-8">
             <div className="flex justify-center gap-3 mb-10">
@@ -303,7 +303,7 @@ const App: React.FC = () => {
              <div className="hidden sm:flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
                 <div className={`w-2 h-2 rounded-full transition-all duration-300 ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500'}`} />
                 <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter flex items-center gap-1">
-                   {isSyncing ? <RefreshCw size={10} className="animate-spin" /> : <CloudCheck size={10} className="text-green-600" />}
+                   {isSyncing ? <RefreshCw size={10} className="animate-spin" /> : <Check size={10} className="text-green-600" />}
                    {isSyncing ? 'Sincronizando...' : 'Cloud Ativa'}
                 </span>
              </div>
