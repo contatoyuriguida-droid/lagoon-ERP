@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, Menu, X, LogOut, ChevronRight, Lock, CloudCheck, CloudOff } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Bell, Menu, X, LogOut, ChevronRight, Lock, CloudCheck, CloudOff, RefreshCw, Volume2 } from 'lucide-react';
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 // @ts-ignore
@@ -28,13 +28,11 @@ const firebaseConfig = {
   measurementId: "G-X7YJ36KZQN"
 };
 
-// Inicialização do Firebase Firestore
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const DOC_PATH = "lagoon/system_state";
 
 const App: React.FC = () => {
-  // --- UI & AUTH ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [pinBuffer, setPinBuffer] = useState<string>("");
   const [activeSection, setActiveSection] = useState<AppSection>(AppSection.DASHBOARD);
@@ -42,8 +40,8 @@ const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSoundEnabled, setIsSoundEnabled] = useState(true);
 
-  // --- DATA STATES ---
   const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -52,7 +50,52 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // --- ESCUTADOR EM TEMPO REAL (FIRESTORE) ---
+  // Referência para contar pedidos e evitar beep no load inicial
+  const lastOrderCount = useRef<number>(-1);
+
+  // --- MOTOR DE ÁUDIO (BEEP) ---
+  const playKdsBeep = useCallback(() => {
+    if (!isSoundEnabled) return;
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Nota Lá
+      oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.5);
+
+      gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.05);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.5);
+    } catch (e) {
+      console.warn("Áudio bloqueado pelo navegador");
+    }
+  }, [isSoundEnabled]);
+
+  // --- MONITOR DE NOVOS PEDIDOS ---
+  useEffect(() => {
+    if (!isLoaded) return;
+    
+    const currentTotalOrders = tables.reduce((acc, table) => 
+      acc + table.orderItems.filter(i => i.status === OrderStatus.PREPARING || i.status === OrderStatus.PENDING).length
+    , 0);
+
+    // Se o contador aumentou e não é o carregamento inicial, toca o beep
+    if (lastOrderCount.current !== -1 && currentTotalOrders > lastOrderCount.current) {
+      playKdsBeep();
+    }
+    
+    lastOrderCount.current = currentTotalOrders;
+  }, [tables, isLoaded, playKdsBeep]);
+
+  // --- ESCUTADOR FIRESTORE ---
   useEffect(() => {
     const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
       if (docSnap.exists()) {
@@ -65,7 +108,6 @@ const App: React.FC = () => {
         if (cloud.printers) setPrinters(cloud.printers);
         if (cloud.connections) setConnections(cloud.connections);
       } else {
-        // Se o banco estiver vazio (primeiro acesso), cria o estado inicial
         const initTables = Array.from({ length: 24 }, (_, i) => ({ 
           id: i + 1, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() 
         }));
@@ -84,19 +126,17 @@ const App: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // --- FUNÇÃO DE PERSISTÊNCIA ---
   const persistToCloud = useCallback(async (data: any) => {
     setIsSyncing(true);
     try {
       await setDoc(doc(db, DOC_PATH), data, { merge: true });
     } catch (e) {
-      console.error("Falha ao salvar na nuvem:", e);
+      console.error("Falha ao salvar:", e);
     } finally {
-      setTimeout(() => setIsSyncing(false), 500);
+      setTimeout(() => setIsSyncing(false), 800);
     }
   }, []);
 
-  // Auto-save debounced (Salva 1s após a última mudança local)
   useEffect(() => {
     if (isLoaded) {
       const timer = setTimeout(() => {
@@ -197,7 +237,7 @@ const App: React.FC = () => {
         <div className="w-full max-w-sm flex flex-col items-center">
           <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-red-200 mb-6">L</div>
           <h1 className="text-2xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
-          <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-10">ERP Sincronizado</p>
+          <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mb-10">Cloud ERP Ativo</p>
 
           <div className="w-full mb-8">
             <div className="flex justify-center gap-3 mb-10">
@@ -256,9 +296,14 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-4">
+             <button onClick={() => setIsSoundEnabled(!isSoundEnabled)} className={`p-2 rounded-lg transition-colors ${isSoundEnabled ? 'text-red-600 bg-red-50' : 'text-gray-300 bg-gray-50'}`}>
+                <Volume2 size={18} />
+             </button>
+
              <div className="hidden sm:flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
-                <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`} />
-                <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">
+                <div className={`w-2 h-2 rounded-full transition-all duration-300 ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500'}`} />
+                <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter flex items-center gap-1">
+                   {isSyncing ? <RefreshCw size={10} className="animate-spin" /> : <CloudCheck size={10} className="text-green-600" />}
                    {isSyncing ? 'Sincronizando...' : 'Cloud Ativa'}
                 </span>
              </div>
