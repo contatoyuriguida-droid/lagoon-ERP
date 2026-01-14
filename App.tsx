@@ -45,50 +45,42 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // ATOMIC REFS FOR REAL-TIME SYNC
   const tablesRef = useRef<Table[]>([]);
   const transactionsRef = useRef<Transaction[]>([]);
-  const productsRef = useRef<Product[]>([]);
-  const customersRef = useRef<Customer[]>([]);
-  const usersRef = useRef<User[]>([]);
   
   useEffect(() => { tablesRef.current = tables; }, [tables]);
   useEffect(() => { transactionsRef.current = transactions; }, [transactions]);
-  useEffect(() => { productsRef.current = products; }, [products]);
-  useEffect(() => { customersRef.current = customers; }, [customers]);
-  useEffect(() => { usersRef.current = users; }, [users]);
 
   const isWritingRef = useRef(false);
   const lastSyncTimeRef = useRef(0);
 
   const persistToCloud = useCallback(async (overrides?: any, priority = false) => {
-    if (isWritingRef.current && !priority) return;
     isWritingRef.current = true;
     setIsSyncing(true);
     
-    // Always use the ref to get the absolute latest state from other components
     const currentState = {
-      products: productsRef.current,
-      transactions: transactionsRef.current,
-      customers: customersRef.current,
-      users: usersRef.current,
-      tables: tablesRef.current,
+      products,
+      transactions: overrides?.transactions || transactionsRef.current,
+      customers,
+      users,
+      tables: overrides?.tables || tablesRef.current,
       printers,
       connections,
-      lastGlobalUpdate: Date.now(),
-      ...overrides
+      lastGlobalUpdate: Date.now()
     };
 
     try {
-      await setDoc(doc(db, DOC_PATH), currentState, { merge: true });
+      await setDoc(doc(db, DOC_PATH), currentState);
       lastSyncTimeRef.current = currentState.lastGlobalUpdate;
     } catch (e) {
-      console.error("Sync Critical Error:", e);
+      console.error("Erro Crítico de Sync:", e);
     } finally {
-      isWritingRef.current = false;
-      setTimeout(() => setIsSyncing(false), 300);
+      setTimeout(() => {
+        isWritingRef.current = false;
+        setIsSyncing(false);
+      }, 500);
     }
-  }, [printers, connections]);
+  }, [products, customers, users, printers, connections]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
@@ -103,6 +95,7 @@ const App: React.FC = () => {
           if (cloud.tables) setTables(cloud.tables);
           if (cloud.printers) setPrinters(cloud.printers);
           if (cloud.connections) setConnections(cloud.connections);
+          lastSyncTimeRef.current = cloud.lastGlobalUpdate;
         }
       } else {
         const initTables = Array.from({ length: 24 }, (_, i) => ({ 
@@ -116,6 +109,7 @@ const App: React.FC = () => {
     return () => unsub();
   }, [persistToCloud]);
 
+  // ACTION: ADICIONAR ITEM
   const addOrderItem = useCallback((tableId: number, product: Product, qty: number, comandaId?: string) => {
     const newTables = tablesRef.current.map(t => {
       if (t.id === tableId) {
@@ -138,6 +132,7 @@ const App: React.FC = () => {
     persistToCloud({ tables: newTables }, true);
   }, [persistToCloud]);
 
+  // ACTION: FINALIZAR PAGAMENTO (CORREÇÃO CRÍTICA)
   const finalizePayment = useCallback((tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
     const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
@@ -151,26 +146,42 @@ const App: React.FC = () => {
     };
     
     const newTransactions = [...transactionsRef.current, newTx];
-    
     const newTables = tablesRef.current.map(t => {
       if (t.id === tableId) {
         const remaining = t.orderItems.filter(i => !itemIds.includes(i.id));
-        // CRITICAL FIX: Ensure the table status changes to AVAILABLE immediately if no items left
+        const isNowAvailable = remaining.length === 0;
         return {
           ...t,
           orderItems: remaining,
-          status: remaining.length === 0 ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
-          comandaId: remaining.length === 0 ? undefined : t.comandaId,
+          status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
+          comandaId: isNowAvailable ? undefined : t.comandaId,
           lastUpdate: Date.now()
         };
       }
       return t;
     });
 
-    // Forced atomic update to state and cloud simultaneously
     setTransactions(newTransactions);
     setTables(newTables);
     persistToCloud({ tables: newTables, transactions: newTransactions }, true);
+  }, [persistToCloud]);
+
+  // ACTION: KDS - CONCLUIR ITEM
+  const markItemAsReady = useCallback((tableId: number, itemId: string) => {
+    const newTables = tablesRef.current.map(t => {
+      if (t.id === tableId) {
+        return {
+          ...t,
+          orderItems: t.orderItems.map(oi => 
+            oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi
+          ),
+          lastUpdate: Date.now()
+        };
+      }
+      return t;
+    });
+    setTables(newTables);
+    persistToCloud({ tables: newTables }, true);
   }, [persistToCloud]);
 
   const handleAddNewTable = useCallback(() => {
@@ -180,47 +191,29 @@ const App: React.FC = () => {
     persistToCloud({ tables: newTables }, true);
   }, [persistToCloud]);
 
-  if (!isLoaded) return <div className="loading-screen"><div className="spinner"></div><div className="loading-text">Sincronizando...</div></div>;
+  if (!isLoaded) return <div className="loading-screen"><div className="spinner"></div><div className="loading-text">Lagoon Cloud Sync...</div></div>;
 
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-red-200 mb-6 animate-pulse">L</div>
+        <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl mb-6">L</div>
         <h1 className="text-3xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
-        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-10">Terminal Operacional Cloud</p>
-        
-        {/* PIN DISPLAY - FIXED VISIBILITY */}
+        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-10">Terminal Operacional</p>
         <div className="flex gap-6 mb-12">
           {[0, 1, 2, 3].map((idx) => (
-            <div 
-              key={idx} 
-              className={`w-6 h-6 rounded-full border-4 transition-all duration-300 transform ${
-                pinBuffer.length > idx 
-                ? 'bg-red-600 border-red-600 scale-125 shadow-xl shadow-red-200' 
-                : 'bg-gray-100 border-gray-200 scale-100'
-              }`} 
-            />
+            <div key={idx} className={`w-6 h-6 rounded-full border-4 transition-all duration-300 ${pinBuffer.length > idx ? 'bg-red-600 border-red-600 scale-125' : 'bg-gray-100 border-gray-200'}`} />
           ))}
         </div>
-
         <div className="grid grid-cols-3 gap-5 w-full max-w-sm">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(key => (
-            <button 
-              key={key} 
-              onClick={() => {
-                if (key === 'C') setPinBuffer("");
-                else if (key === 'OK') {
-                  const u = users.find(u => u.pin === pinBuffer);
-                  if (u) { setCurrentUser(u); setPinBuffer(""); }
-                  else setPinBuffer("");
-                } else if (pinBuffer.length < 4) {
-                  setPinBuffer(p => p + String(key));
-                }
-              }} 
-              className="h-16 rounded-3xl flex items-center justify-center font-black text-xl bg-white border-2 border-gray-50 text-gray-800 shadow-sm hover:border-red-600 active:bg-red-600 active:text-white transform active:scale-90 transition-all"
-            >
-              {key}
-            </button>
+            <button key={key} onClick={() => {
+              if (key === 'C') setPinBuffer("");
+              else if (key === 'OK') {
+                const u = users.find(u => u.pin === pinBuffer);
+                if (u) { setCurrentUser(u); setPinBuffer(""); }
+                else setPinBuffer("");
+              } else if (pinBuffer.length < 4) setPinBuffer(p => p + String(key));
+            }} className="h-16 rounded-3xl flex items-center justify-center font-black text-xl bg-white border-2 border-gray-50 text-gray-800 shadow-sm active:bg-red-600 active:text-white transform active:scale-90 transition-all">{key}</button>
           ))}
         </div>
       </div>
@@ -249,35 +242,28 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-24 bg-white border-b border-gray-100 flex items-center justify-between px-8 z-30 shadow-sm">
           <h2 className="text-[12px] font-black text-gray-800 uppercase tracking-[0.3em]">{activeSection}</h2>
-          
           <div className="flex items-center gap-6">
              <div className="hidden md:flex items-center gap-2 bg-green-50 px-4 py-2 rounded-full border border-green-100">
-                <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500 shadow-sm shadow-green-200'}`} />
+                <div className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-blue-500 animate-ping' : 'bg-green-500 shadow-sm'}`} />
                 <span className="text-[10px] font-black text-green-700 uppercase tracking-widest">Sincronizado</span>
              </div>
-
              <div className="flex items-center gap-5 pl-6 border-l-2 border-gray-100">
                 <div className="text-right">
                    <p className="text-[14px] font-black text-gray-900 leading-none mb-1">{currentUser.name}</p>
-                   <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white shadow-md inline-block ${
-                      currentUser.role === UserRole.ADMIN ? 'bg-red-600 shadow-red-100' : 
-                      currentUser.role === UserRole.MANAGER ? 'bg-gray-800 shadow-gray-200' : 'bg-blue-600 shadow-blue-100'
-                   }`}>
+                   <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest text-white ${currentUser.role === UserRole.ADMIN ? 'bg-red-600' : currentUser.role === UserRole.MANAGER ? 'bg-gray-800' : 'bg-blue-600'}`}>
                       {currentUser.role}
                    </div>
                 </div>
-                <div className="w-12 h-12 rounded-2xl bg-red-600 flex items-center justify-center text-white font-black text-xl shadow-lg border-b-4 border-red-800 active:translate-y-1 transition-transform">
-                   {currentUser.name[0]}
-                </div>
-                <button onClick={() => setCurrentUser(null)} className="p-3 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all"><LogOut size={22} /></button>
+                <div className="w-12 h-12 rounded-2xl bg-red-600 flex items-center justify-center text-white font-black text-xl shadow-lg">{currentUser.name[0]}</div>
+                <button onClick={() => setCurrentUser(null)} className="p-3 text-gray-400 hover:text-red-600 transition-all"><LogOut size={22} /></button>
              </div>
           </div>
         </header>
 
         <main className="flex-1 overflow-auto p-4 lg:p-10">
             {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} printers={printers} />}
-            {activeSection === AppSection.POS && <POS currentUser={currentUser} tables={tables} setTables={setTables} products={products} onAddItems={addOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} />}
-            {activeSection === AppSection.KDS && <KDS tables={tables} setTables={setTables} />}
+            {activeSection === AppSection.POS && <POS currentUser={currentUser} tables={tables} products={products} onAddItems={addOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} />}
+            {activeSection === AppSection.KDS && <KDS tables={tables} onMarkReady={markItemAsReady} />}
             {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={setProducts} />}
             {activeSection === AppSection.CRM && <CRM customers={customers} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}

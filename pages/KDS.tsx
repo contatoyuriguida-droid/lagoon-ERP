@@ -4,10 +4,10 @@ import { Table, OrderStatus } from '../types.ts';
 
 interface KDSProps {
   tables: Table[];
-  setTables: React.Dispatch<React.SetStateAction<Table[]>>;
+  onMarkReady: (tableId: number, itemId: string) => void;
 }
 
-const KDS: React.FC<KDSProps> = ({ tables, setTables }) => {
+const KDS: React.FC<KDSProps> = ({ tables, onMarkReady }) => {
   const [showHistory, setShowHistory] = useState(false);
 
   const activeItems = tables.flatMap(t => 
@@ -20,30 +20,16 @@ const KDS: React.FC<KDSProps> = ({ tables, setTables }) => {
     t.orderItems
       .filter(i => i.status === OrderStatus.READY)
       .map(i => ({ ...i, tableId: t.id }))
-  ).sort((a, b) => b.timestamp - a.timestamp).slice(0, 8);
-
-  const markAsReady = (tableId: number, itemId: string) => {
-    setTables(prev => prev.map(t => {
-      if (t.id === tableId) {
-        return {
-          ...t,
-          orderItems: t.orderItems.map(oi => 
-            oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi
-          )
-        };
-      }
-      return t;
-    }));
-  };
+  ).sort((a, b) => b.timestamp - a.timestamp).slice(0, 12);
 
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-           <div className="p-3 bg-red-600 text-white rounded-2xl shadow-lg shadow-red-100"><ChefHat /></div>
+           <div className="p-3 bg-red-600 text-white rounded-2xl shadow-lg"><ChefHat /></div>
            <div>
               <h2 className="text-xl font-black text-gray-900 leading-none">Monitor de Fogo</h2>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-2">{activeItems.length} Pedidos em Aberto</p>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-2">{activeItems.length} Em Preparo</p>
            </div>
         </div>
         <button 
@@ -57,31 +43,25 @@ const KDS: React.FC<KDSProps> = ({ tables, setTables }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {activeItems.map((item) => {
           const minutesElapsed = Math.floor((Date.now() - item.timestamp) / 60000);
-          const isLate = minutesElapsed > 12;
+          const isLate = minutesElapsed > 15;
 
           return (
             <div key={item.id} className={`bg-white rounded-3xl border-2 transition-all flex flex-col overflow-hidden shadow-sm ${isLate ? 'border-red-600' : 'border-gray-50'}`}>
               <div className={`p-4 flex items-center justify-between ${isLate ? 'bg-red-50' : 'bg-gray-50'}`}>
-                <div>
-                  <h3 className="font-black text-gray-900 text-sm">Mesa {item.tableId}</h3>
-                  <span className="text-[9px] font-black text-gray-400 uppercase">Ticket #{item.id.split('-')[2]}</span>
-                </div>
-                <div className="flex flex-col items-end">
-                  <span className={`text-[10px] font-black ${isLate ? 'text-red-600 animate-pulse' : 'text-gray-500'}`}>
-                    {minutesElapsed} MIN
-                  </span>
-                  {isLate && <AlertTriangle size={12} className="text-red-600" />}
-                </div>
+                <h3 className="font-black text-gray-900 text-sm">Mesa {item.tableId}</h3>
+                <span className={`text-[10px] font-black ${isLate ? 'text-red-600 animate-pulse' : 'text-gray-500'}`}>
+                   {minutesElapsed} MIN
+                </span>
               </div>
               
               <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
                 <div className="flex items-start gap-4">
-                  <span className="text-2xl font-black text-red-600 leading-none">{item.quantity}x</span>
+                  <span className="text-2xl font-black text-red-600">{item.quantity}x</span>
                   <p className="font-black text-gray-800 text-lg leading-tight uppercase">{item.name}</p>
                 </div>
                 
                 <button 
-                  onClick={() => markAsReady(item.tableId, item.id)}
+                  onClick={() => onMarkReady(item.tableId, item.id)}
                   className="w-full py-4 bg-gray-50 hover:bg-green-600 hover:text-white text-gray-400 rounded-2xl transition-all flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest"
                 >
                   <CheckCircle2 size={16} /> Concluir
@@ -94,7 +74,7 @@ const KDS: React.FC<KDSProps> = ({ tables, setTables }) => {
         {activeItems.length === 0 && (
           <div className="col-span-full py-20 text-center space-y-4 opacity-20">
              <ChefHat size={64} className="mx-auto" />
-             <p className="font-black uppercase tracking-widest text-sm">Cozinha Limpa. Bom trabalho!</p>
+             <p className="font-black uppercase tracking-widest text-sm text-gray-900">Nenhum pedido pendente</p>
           </div>
         )}
       </div>
