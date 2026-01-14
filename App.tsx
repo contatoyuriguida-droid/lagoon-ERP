@@ -114,10 +114,9 @@ const App: React.FC = () => {
   const handleLogin = (u: User) => {
     setCurrentUser(u);
     setPinBuffer("");
-    // REDIRECIONAMENTO INTELIGENTE: Garçom vai direto pro POS
     if (u.role === UserRole.WAITER) {
       setActiveSection(AppSection.POS);
-      setIsSidebarOpen(false); // No mobile, fecha a sidebar para ganhar espaço
+      setIsSidebarOpen(false);
     } else {
       setActiveSection(AppSection.DASHBOARD);
     }
@@ -136,6 +135,25 @@ const App: React.FC = () => {
           status: TableStatus.OCCUPIED,
           comandaId: comandaId || t.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
           orderItems: [...t.orderItems, newItem],
+          lastUpdate: Date.now()
+        };
+      }
+      return t;
+    });
+    setTables(newTables);
+    persistToCloud({ tables: newTables, priority: true });
+  }, [persistToCloud]);
+
+  const removeOrderItem = useCallback((tableId: number, itemId: string) => {
+    const newTables = tablesRef.current.map(t => {
+      if (t.id === tableId) {
+        const remainingItems = t.orderItems.filter(oi => oi.id !== itemId);
+        const isEmpty = remainingItems.length === 0;
+        return {
+          ...t,
+          status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
+          comandaId: isEmpty ? "" : t.comandaId,
+          orderItems: remainingItems,
           lastUpdate: Date.now()
         };
       }
@@ -179,7 +197,6 @@ const App: React.FC = () => {
     persistToCloud({ tables: newTables, priority: true });
   }, [persistToCloud]);
 
-  // Fix: Implemented handleAddNewTable to allow adding new tables dynamically
   const handleAddNewTable = useCallback(() => {
     const nextId = tablesRef.current.length > 0 ? Math.max(...tablesRef.current.map(t => t.id)) + 1 : 1;
     const newTable: Table = {
@@ -227,7 +244,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
-      {/* Sidebar - Oculta por padrão para garçons no mobile */}
       <aside className={`${isSidebarOpen ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-r border-gray-100 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
         <div className="h-16 flex items-center px-6 border-b border-gray-50">
           <div className="flex items-center gap-3">
@@ -276,7 +292,7 @@ const App: React.FC = () => {
 
         <main className="flex-1 overflow-auto p-3 lg:p-10">
             {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} printers={printers} />}
-            {activeSection === AppSection.POS && <POS currentUser={currentUser} tables={statusTables} products={products} onAddItems={addOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} />}
+            {activeSection === AppSection.POS && <POS currentUser={currentUser} tables={statusTables} products={products} onAddItems={addOrderItem} onRemoveItem={removeOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} />}
             {activeSection === AppSection.KDS && <KDS tables={statusTables} onMarkReady={markItemAsReady} />}
             {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={(newProds) => { 
                 const updated = typeof newProds === 'function' ? newProds(products) : newProds;

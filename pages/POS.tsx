@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, LayoutGrid, List, ChevronRight } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, LayoutGrid, List, ChevronRight, CheckCircle2, Trash2 } from 'lucide-react';
 import { Table, TableStatus, Product, Customer, PaymentMethod, User, UserRole } from '../types.ts';
 
 interface POSProps {
@@ -7,11 +7,17 @@ interface POSProps {
   tables: Table[];
   products: Product[];
   onAddItems: (tableId: number, product: Product, quantity: number) => void;
+  onRemoveItem: (tableId: number, itemId: string) => void;
   onFinalize: (tableId: number, itemIds: string[], method: PaymentMethod, amountPaid: number, change: number) => void;
   onAddTable: () => void;
 }
 
-const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, onFinalize, onAddTable }) => {
+interface Toast {
+  id: string;
+  message: string;
+}
+
+const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, onRemoveItem, onFinalize, onAddTable }) => {
   const [activeTab, setActiveTab] = useState<'TABLES' | 'COMANDAS'>('TABLES');
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [isAddingItems, setIsAddingItems] = useState(false);
@@ -19,6 +25,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [amountReceived, setAmountReceived] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   const currentTable = useMemo(() => tables.find(t => t.id === selectedTableId), [tables, selectedTableId]);
 
@@ -36,6 +43,20 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
     return Math.max(0, received - totalBill);
   }, [amountReceived, totalBill]);
 
+  const showToast = (message: string) => {
+    const id = Date.now().toString();
+    setToasts(prev => [...prev, { id, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 2000);
+  };
+
+  const handleAddItem = (product: Product) => {
+    if (!selectedTableId) return;
+    onAddItems(selectedTableId, product, 1);
+    showToast(`+1 ${product.name}`);
+  };
+
   const handleFinalize = () => {
     if (!currentTable || !paymentMethod) return;
     const itemIds = currentTable.orderItems.map(i => i.id);
@@ -48,7 +69,17 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4 lg:space-y-6">
+    <div className="flex flex-col h-full space-y-4 lg:space-y-6 relative">
+      
+      {/* Toast Notifications Layer */}
+      <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 pointer-events-none">
+        {toasts.map(t => (
+          <div key={t.id} className="bg-red-600 text-white px-6 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-2xl shadow-red-200 animate-in fade-in slide-in-from-top-4 duration-300 flex items-center gap-2">
+            <CheckCircle2 size={16} /> {t.message}
+          </div>
+        ))}
+      </div>
+
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-gray-100 w-full sm:w-auto">
           <button onClick={() => setActiveTab('TABLES')} className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all ${activeTab === 'TABLES' ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'text-gray-400'}`}>
@@ -117,7 +148,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
                    </div>
                    <div className="grid grid-cols-1 gap-2">
                      {filteredProducts.map(p => (
-                       <button key={p.id} onClick={() => onAddItems(currentTable.id, p, 1)} className="w-full p-4 bg-white border border-gray-100 rounded-2xl hover:border-red-300 active:scale-[0.98] flex justify-between items-center text-left shadow-sm transition-all group">
+                       <button key={p.id} onClick={() => handleAddItem(p)} className="w-full p-4 bg-white border border-gray-100 rounded-2xl hover:border-red-300 active:scale-[0.98] flex justify-between items-center text-left shadow-sm transition-all group">
                          <div className="flex items-center gap-4">
                             <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors">
                                <Plus size={18} />
@@ -162,7 +193,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
               ) : (
                 <div className="p-4 space-y-3">
                    {currentTable.orderItems.map(item => (
-                     <div key={item.id} className="p-4 bg-white rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm relative overflow-hidden group">
+                     <div key={item.id} className="p-4 bg-white rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm relative overflow-hidden group animate-in fade-in slide-in-from-left-2">
                         {item.status === 'READY' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-green-500" />}
                         <div className="flex items-center gap-4">
                            <span className="w-10 h-10 flex items-center justify-center bg-red-50 text-red-600 rounded-xl text-xs font-black">{item.quantity}x</span>
@@ -176,7 +207,18 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
                               </div>
                            </div>
                         </div>
-                        <p className="font-black text-sm text-gray-900">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                        <div className="flex items-center gap-4">
+                          <p className="font-black text-sm text-gray-900">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                          <button 
+                            onClick={() => {
+                              onRemoveItem(currentTable.id, item.id);
+                              showToast(`Removido: ${item.name}`);
+                            }} 
+                            className="p-2 text-gray-300 hover:text-red-600 active:scale-90 transition-all"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
                      </div>
                    ))}
                    {currentTable.orderItems.length === 0 && (
