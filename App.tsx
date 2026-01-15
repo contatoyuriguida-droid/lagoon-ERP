@@ -28,12 +28,27 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Caminhos Granulares das Coleções
 const COLL_TABLES = "lagoon_tables";
 const COLL_PRODUCTS = "lagoon_products";
 const COLL_CUSTOMERS = "lagoon_customers";
 const COLL_TRANSACTIONS = "lagoon_transactions";
 const DOC_SETTINGS = "lagoon_config/global";
+
+/**
+ * Função utilitária para remover campos 'undefined' antes de enviar ao Firestore.
+ * Firestore lança erro se encontrar undefined.
+ */
+const sanitize = (obj: any) => {
+  const cleaned = { ...obj };
+  Object.keys(cleaned).forEach(key => {
+    if (cleaned[key] === undefined) {
+      delete cleaned[key];
+    } else if (cleaned[key] && typeof cleaned[key] === 'object' && !Array.isArray(cleaned[key])) {
+      cleaned[key] = sanitize(cleaned[key]);
+    }
+  });
+  return cleaned;
+};
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -53,74 +68,65 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // 1. Monitoramento em Tempo Real das Mesas (Granular)
+  // Referência para o estado das mesas para uso em funções de callback
+  const tablesRef = useRef<Table[]>([]);
+  useEffect(() => { tablesRef.current = statusTables; }, [statusTables]);
+
+  // Monitoramento Granular
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, COLL_TABLES), (snap) => {
-      const tablesList: Table[] = [];
-      snap.forEach(doc => tablesList.push(doc.data() as Table));
-      // Ordenar por ID para manter a grade consistente
-      setTables(tablesList.sort((a, b) => a.id - b.id));
+    const unsubTables = onSnapshot(collection(db, COLL_TABLES), (snap) => {
+      const list: Table[] = [];
+      snap.forEach(d => list.push(d.data() as Table));
+      setTables(list.sort((a, b) => a.id - b.id));
       setIsLoaded(true);
     });
-    return () => unsub();
-  }, []);
 
-  // 2. Monitoramento de Produtos
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, COLL_PRODUCTS), (snap) => {
-      const prodList: Product[] = [];
-      snap.forEach(doc => prodList.push(doc.data() as Product));
-      setProducts(prodList.length > 0 ? prodList : MOCK_PRODUCTS);
+    const unsubProds = onSnapshot(collection(db, COLL_PRODUCTS), (snap) => {
+      const list: Product[] = [];
+      snap.forEach(d => list.push(d.data() as Product));
+      setProducts(list.length > 0 ? list : MOCK_PRODUCTS);
     });
-    return () => unsub();
-  }, []);
 
-  // 3. Monitoramento de Transações (Últimas 50 para o Dashboard)
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, COLL_TRANSACTIONS), (snap) => {
-      const txList: Transaction[] = [];
-      snap.forEach(doc => txList.push(doc.data() as Transaction));
-      setTransactions(txList.sort((a, b) => b.timestamp - a.timestamp));
+    const unsubTx = onSnapshot(collection(db, COLL_TRANSACTIONS), (snap) => {
+      const list: Transaction[] = [];
+      snap.forEach(d => list.push(d.data() as Transaction));
+      setTransactions(list.sort((a, b) => b.timestamp - a.timestamp));
     });
-    return () => unsub();
-  }, []);
 
-  // 4. Monitoramento de Clientes
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, COLL_CUSTOMERS), (snap) => {
-      const custList: Customer[] = [];
-      snap.forEach(doc => custList.push(doc.data() as Customer));
-      setCustomers(custList);
+    const unsubCust = onSnapshot(collection(db, COLL_CUSTOMERS), (snap) => {
+      const list: Customer[] = [];
+      snap.forEach(d => list.push(d.data() as Customer));
+      setCustomers(list);
     });
-    return () => unsub();
-  }, []);
 
-  // 5. Configurações Globais (Impressoras/Conexões)
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, DOC_SETTINGS), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.printers) setPrinters(data.printers);
-        if (data.connections) setConnections(data.connections);
-        if (data.users) setUsers(data.users);
+    const unsubSettings = onSnapshot(doc(db, DOC_SETTINGS), (ds) => {
+      if (ds.exists()) {
+        const d = ds.data();
+        if (d.printers) setPrinters(d.printers);
+        if (d.connections) setConnections(d.connections);
+        if (d.users) setUsers(d.users);
       }
     });
-    return () => unsub();
+
+    return () => {
+      unsubTables(); unsubProds(); unsubTx(); unsubCust(); unsubSettings();
+    };
   }, []);
 
-  // Funções de Persistência Granular (A Solução para Inconsistência)
-  
   const saveTable = async (table: Table) => {
     setIsSyncing(true);
     try {
-      await setDoc(doc(db, COLL_TABLES, table.id.toString()), table);
+      // Importante: sanitize remove os campos 'undefined' que causavam o erro
+      await setDoc(doc(db, COLL_TABLES, table.id.toString()), sanitize(table));
+    } catch (e) {
+      console.error("Erro ao salvar mesa:", e);
     } finally {
       setIsSyncing(false);
     }
   };
 
   const addOrderItem = useCallback(async (tableId: number, product: Product, qty: number, comandaId?: string) => {
-    const table = statusTables.find(t => t.id === tableId);
+    const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
 
     const newItem: OrderItem = {
@@ -137,11 +143,13 @@ const App: React.FC = () => {
       lastUpdate: Date.now()
     };
 
+    // Optimistic Update local para resposta instantânea (Liso!)
+    setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
-  }, [statusTables]);
+  }, []);
 
   const removeOrderItem = useCallback(async (tableId: number, itemId: string) => {
-    const table = statusTables.find(t => t.id === tableId);
+    const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
 
     const remainingItems = table.orderItems.filter(oi => oi.id !== itemId);
@@ -155,38 +163,47 @@ const App: React.FC = () => {
       lastUpdate: Date.now()
     };
 
+    setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
-  }, [statusTables]);
+  }, []);
 
   const finalizePayment = useCallback(async (tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
-    const table = statusTables.find(t => t.id === tableId);
+    const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
 
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
 
-    // 1. Registrar Transação (Independente)
+    // 1. Registrar Transação com Sanitize (Evita o erro de undefined no customerId)
     const txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newTx: Transaction = {
-      id: txId, tableId, comandaId: table.comandaId, amount: total, amountPaid: amount, change,
-      paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now(), customerId: table.customerId
+      id: txId, 
+      tableId, 
+      comandaId: table.comandaId || "", 
+      amount: total, 
+      amountPaid: amount, 
+      change,
+      paymentMethod: method, 
+      itemsCount: itemIds.length, 
+      timestamp: Date.now(), 
+      customerId: table.customerId || undefined // Sanitize vai remover se for undefined
     };
-    await setDoc(doc(db, COLL_TRANSACTIONS, txId), newTx);
+    await setDoc(doc(db, COLL_TRANSACTIONS, txId), sanitize(newTx));
 
-    // 2. Atualizar Cliente (Independente)
+    // 2. Atualizar Cliente
     if (table.customerId) {
       const customer = customers.find(c => c.id === table.customerId);
       if (customer) {
-        await setDoc(doc(db, COLL_CUSTOMERS, customer.id), {
+        await setDoc(doc(db, COLL_CUSTOMERS, customer.id), sanitize({
           ...customer,
           spent: customer.spent + total,
           points: customer.points + Math.floor(total / 10),
           lastVisit: new Date().toLocaleDateString('pt-BR')
-        });
+        }));
       }
     }
 
-    // 3. Limpar a Mesa (Operação Crítica)
+    // 3. Atualizar a Mesa
     const remaining = table.orderItems.filter(i => !itemIds.includes(i.id));
     const isNowAvailable = remaining.length === 0;
     
@@ -199,11 +216,12 @@ const App: React.FC = () => {
       lastUpdate: Date.now()
     };
 
+    setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
-  }, [statusTables, customers]);
+  }, [customers]);
 
   const markItemAsReady = useCallback(async (tableId: number, itemId: string) => {
-    const table = statusTables.find(t => t.id === tableId);
+    const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
 
     const updatedTable: Table = {
@@ -212,26 +230,27 @@ const App: React.FC = () => {
       lastUpdate: Date.now()
     };
 
+    setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
-  }, [statusTables]);
+  }, []);
 
   const assignCustomerToTable = useCallback(async (tableId: number, customerId: string | undefined) => {
-    const table = statusTables.find(t => t.id === tableId);
+    const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
 
     const updatedTable: Table = { ...table, customerId, lastUpdate: Date.now() };
+    setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
-  }, [statusTables]);
+  }, []);
 
   const handleAddNewTable = useCallback(async () => {
-    const nextId = statusTables.length > 0 ? Math.max(...statusTables.map(t => t.id)) + 1 : 1;
+    const nextId = tablesRef.current.length > 0 ? Math.max(...tablesRef.current.map(t => t.id)) + 1 : 1;
     const newTable: Table = {
       id: nextId, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now()
     };
     await saveTable(newTable);
-  }, [statusTables]);
+  }, []);
 
-  // Handlers de Login
   const handleLogin = (u: User) => {
     setCurrentUser(u);
     setPinBuffer("");
@@ -359,10 +378,10 @@ const App: React.FC = () => {
             />}
             {activeSection === AppSection.KDS && <KDS tables={statusTables} onMarkReady={markItemAsReady} />}
             {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={(newProds) => {
-               // Implementar persistência granular para produtos se necessário
+               // Implementação de persistência para produtos se necessário
             }} />}
             {activeSection === AppSection.CRM && <CRM customers={customers} setCustomers={(newCust) => {
-               // Implementar persistência granular para clientes se necessário
+               // Implementação de persistência para clientes se necessário
             }} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
             {activeSection === AppSection.ARCHITECT && <ArchitectInfo />}
