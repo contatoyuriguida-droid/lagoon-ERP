@@ -48,10 +48,12 @@ const App: React.FC = () => {
   const tablesRef = useRef<Table[]>([]);
   const transactionsRef = useRef<Transaction[]>([]);
   const productsRef = useRef<Product[]>([]);
+  const customersRef = useRef<Customer[]>([]);
   
   useEffect(() => { tablesRef.current = statusTables; }, [statusTables]);
   useEffect(() => { transactionsRef.current = transactions; }, [transactions]);
   useEffect(() => { productsRef.current = products; }, [products]);
+  useEffect(() => { customersRef.current = customers; }, [customers]);
 
   const isWritingRef = useRef(false);
   const lastSyncTimeRef = useRef(0);
@@ -64,7 +66,7 @@ const App: React.FC = () => {
     const currentState = {
       products: productsRef.current,
       transactions: overrides?.transactions || transactionsRef.current,
-      customers,
+      customers: overrides?.customers || customersRef.current,
       users,
       tables: overrides?.tables || tablesRef.current,
       printers,
@@ -82,7 +84,7 @@ const App: React.FC = () => {
         setIsSyncing(false);
       }, 1000);
     }
-  }, [customers, users, printers, connections]);
+  }, [users, printers, connections]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
@@ -299,7 +301,11 @@ const App: React.FC = () => {
                 setProducts(updated);
                 persistToCloud({ products: updated, priority: true });
             }} />}
-            {activeSection === AppSection.CRM && <CRM customers={customers} />}
+            {activeSection === AppSection.CRM && <CRM customers={customers} setCustomers={(newCust) => {
+                const updated = typeof newCust === 'function' ? newCust(customers) : newCust;
+                setCustomers(updated);
+                persistToCloud({ customers: updated, priority: true });
+            }} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
             {activeSection === AppSection.ARCHITECT && <ArchitectInfo />}
         </main>
