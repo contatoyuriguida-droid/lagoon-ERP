@@ -3,7 +3,7 @@ import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, C
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 // @ts-ignore
-import { getFirestore, doc, onSnapshot, setDoc, getDoc, updateDoc } from "firebase/firestore";
+import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
 
 import { AppSection, Table, TableStatus, OrderStatus, Product, Transaction, Customer, OrderItem, PaymentMethod, Printer, Connection, User, UserRole } from './types.ts';
 import { NAVIGATION_ITEMS, MOCK_PRODUCTS, INITIAL_USERS, ROLE_PERMISSIONS } from './constants.tsx';
@@ -47,15 +47,13 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // Referências cruciais para evitar Stale Closures (Dados antigos em funções async)
+  // Refs de sincronização profunda
   const stateRef = useRef({
     tables: [] as Table[],
     transactions: [] as Transaction[],
     products: [] as Product[],
     customers: [] as Customer[],
-    users: [] as User[],
-    printers: [] as Printer[],
-    connections: [] as Connection[]
+    users: [] as User[]
   });
 
   useEffect(() => {
@@ -64,65 +62,77 @@ const App: React.FC = () => {
       transactions,
       products,
       customers,
-      users,
-      printers,
-      connections
+      users
     };
-  }, [statusTables, transactions, products, customers, users, printers, connections]);
+  }, [statusTables, transactions, products, customers, users]);
 
   const isWritingRef = useRef(false);
-  const lastSyncTimeRef = useRef(0);
+  const lastCloudUpdateRef = useRef(0);
 
-  // Função de persistência Robusta: Força a atualização do Ref antes de enviar
+  // Persistência com lógica de união (Merge)
   const persistToCloud = useCallback(async (overrides?: any) => {
     isWritingRef.current = true;
     setIsSyncing(true);
     
     const now = Date.now();
-    const newState = {
+    const currentState = {
       products: overrides?.products || stateRef.current.products,
       transactions: overrides?.transactions || stateRef.current.transactions,
       customers: overrides?.customers || stateRef.current.customers,
       users: overrides?.users || stateRef.current.users,
       tables: overrides?.tables || stateRef.current.tables,
-      printers: overrides?.printers || stateRef.current.printers,
-      connections: overrides?.connections || stateRef.current.connections,
+      printers,
+      connections,
       lastGlobalUpdate: now
     };
 
     try {
-      await setDoc(doc(db, DOC_PATH), newState);
-      lastSyncTimeRef.current = now;
+      await setDoc(doc(db, DOC_PATH), currentState);
+      lastCloudUpdateRef.current = now;
     } catch (e) {
-      console.error("Cloud Save Error:", e);
+      console.error("Critical Sync Failure:", e);
     } finally {
-      // Pequeno delay para permitir que o onSnapshot receba a própria atualização sem conflito
       setTimeout(() => {
         isWritingRef.current = false;
         setIsSyncing(false);
-      }, 500);
+      }, 800);
     }
-  }, []);
+  }, [printers, connections]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
-      // Se estamos escrevendo, ignoramos o snapshot para evitar "flicker" ou sobrescrita reversa
+      // Regra de Ouro: Se eu estou no meio de uma gravação, ignoro o que vem de fora para não dar flicker
       if (isWritingRef.current) return;
 
       if (docSnap.exists()) {
         const cloud = docSnap.data();
-        if (cloud.lastGlobalUpdate && cloud.lastGlobalUpdate > lastSyncTimeRef.current) {
+        
+        // CONCILIAÇÃO POR TIMESTAMPS INDIVIDUAIS (Mesa a Mesa)
+        if (cloud.tables) {
+          setTables(prevLocalTables => {
+            // Se local for vazio (primeiro carregamento), aceita tudo
+            if (prevLocalTables.length === 0) return cloud.tables;
+
+            return cloud.tables.map((ct: Table) => {
+              const localT = prevLocalTables.find(lt => lt.id === ct.id);
+              if (!localT) return ct;
+              // Só substitui a mesa local se a da nuvem for ESTRITAMENTE MAIS NOVA
+              // Isso evita que um snapshot atrasado apague o que o garçom acabou de clicar
+              return ct.lastUpdate > localT.lastUpdate ? ct : localT;
+            });
+          });
+        }
+
+        if (cloud.lastGlobalUpdate > lastCloudUpdateRef.current) {
           if (cloud.products) setProducts(cloud.products);
           if (cloud.transactions) setTransactions(cloud.transactions);
           if (cloud.customers) setCustomers(cloud.customers);
           if (cloud.users) setUsers(cloud.users);
-          if (cloud.tables) setTables(cloud.tables);
           if (cloud.printers) setPrinters(cloud.printers);
           if (cloud.connections) setConnections(cloud.connections);
-          lastSyncTimeRef.current = cloud.lastGlobalUpdate;
+          lastCloudUpdateRef.current = cloud.lastGlobalUpdate;
         }
       } else {
-        // Inicialização primária
         const initTables = Array.from({ length: 24 }, (_, i) => ({ 
           id: i + 1, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() 
         }));
@@ -154,54 +164,58 @@ const App: React.FC = () => {
     setTimeout(() => { setLoginToast(null); }, 3000);
   };
 
+  // Funções de Mesa Refatoradas para Atômicas
   const assignCustomerToTable = useCallback((tableId: number, customerId: string | undefined) => {
-    const newTables = stateRef.current.tables.map(t => 
-      t.id === tableId ? { ...t, customerId, lastUpdate: Date.now() } : t
-    );
-    setTables(newTables);
-    persistToCloud({ tables: newTables });
+    setTables(prev => {
+      const updated = prev.map(t => t.id === tableId ? { ...t, customerId, lastUpdate: Date.now() } : t);
+      persistToCloud({ tables: updated });
+      return updated;
+    });
   }, [persistToCloud]);
 
   const addOrderItem = useCallback((tableId: number, product: Product, qty: number, comandaId?: string) => {
-    // Usamos o estado mais recente do REF para garantir que não perdemos itens de outros garçons
-    const newTables = stateRef.current.tables.map(t => {
-      if (t.id === tableId) {
-        const newItem: OrderItem = {
-          id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-          productId: product.id, name: product.name, price: product.price, quantity: qty,
-          status: OrderStatus.PREPARING, paid: false, timestamp: Date.now()
-        };
-        return {
-          ...t,
-          status: TableStatus.OCCUPIED,
-          comandaId: comandaId || t.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
-          orderItems: [...t.orderItems, newItem],
-          lastUpdate: Date.now()
-        };
-      }
-      return t;
+    setTables(prev => {
+      const updated = prev.map(t => {
+        if (t.id === tableId) {
+          const newItem: OrderItem = {
+            id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`, // UUID mais longo
+            productId: product.id, name: product.name, price: product.price, quantity: qty,
+            status: OrderStatus.PREPARING, paid: false, timestamp: Date.now()
+          };
+          return {
+            ...t,
+            status: TableStatus.OCCUPIED,
+            comandaId: comandaId || t.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
+            orderItems: [...t.orderItems, newItem],
+            lastUpdate: Date.now()
+          };
+        }
+        return t;
+      });
+      persistToCloud({ tables: updated });
+      return updated;
     });
-    setTables(newTables);
-    persistToCloud({ tables: newTables });
   }, [persistToCloud]);
 
   const removeOrderItem = useCallback((tableId: number, itemId: string) => {
-    const newTables = stateRef.current.tables.map(t => {
-      if (t.id === tableId) {
-        const remainingItems = t.orderItems.filter(oi => oi.id !== itemId);
-        const isEmpty = remainingItems.length === 0;
-        return {
-          ...t,
-          status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
-          comandaId: isEmpty ? "" : t.comandaId,
-          orderItems: remainingItems,
-          lastUpdate: Date.now()
-        };
-      }
-      return t;
+    setTables(prev => {
+      const updated = prev.map(t => {
+        if (t.id === tableId) {
+          const remainingItems = t.orderItems.filter(oi => oi.id !== itemId);
+          const isEmpty = remainingItems.length === 0;
+          return {
+            ...t,
+            status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
+            comandaId: isEmpty ? "" : t.comandaId,
+            orderItems: remainingItems,
+            lastUpdate: Date.now()
+          };
+        }
+        return t;
+      });
+      persistToCloud({ tables: updated });
+      return updated;
     });
-    setTables(newTables);
-    persistToCloud({ tables: newTables });
   }, [persistToCloud]);
 
   const finalizePayment = useCallback((tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
@@ -211,17 +225,12 @@ const App: React.FC = () => {
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
     
-    // Atualização do CRM
+    // CRM Update
     let updatedCustomers = stateRef.current.customers;
     if (table.customerId) {
       updatedCustomers = updatedCustomers.map(c => {
         if (c.id === table.customerId) {
-          return {
-            ...c,
-            spent: c.spent + total,
-            points: c.points + Math.floor(total / 10),
-            lastVisit: new Date().toLocaleDateString('pt-BR')
-          };
+          return { ...c, spent: c.spent + total, points: c.points + Math.floor(total / 10), lastVisit: new Date().toLocaleDateString('pt-BR') };
         }
         return c;
       });
@@ -229,51 +238,55 @@ const App: React.FC = () => {
     }
 
     const newTx: Transaction = {
-      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`, 
+      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`, 
       tableId, comandaId: table.comandaId, amount: total, amountPaid: amount, change,
       paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now(), customerId: table.customerId
     };
     
     const newTransactions = [...stateRef.current.transactions, newTx];
-    const newTables = stateRef.current.tables.map(t => {
-      if (t.id === tableId) {
-        const remaining = t.orderItems.filter(i => !itemIds.includes(i.id));
-        const isNowAvailable = remaining.length === 0;
-        return { 
-          ...t, 
-          orderItems: remaining, 
-          status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED, 
-          comandaId: isNowAvailable ? "" : t.comandaId, 
-          customerId: isNowAvailable ? undefined : t.customerId,
-          lastUpdate: Date.now() 
-        };
-      }
-      return t;
-    });
-    
     setTransactions(newTransactions);
-    setTables(newTables);
-    persistToCloud({ tables: newTables, transactions: newTransactions, customers: updatedCustomers });
+
+    setTables(prev => {
+      const updated = prev.map(t => {
+        if (t.id === tableId) {
+          const remaining = t.orderItems.filter(i => !itemIds.includes(i.id));
+          const isNowAvailable = remaining.length === 0;
+          return { 
+            ...t, 
+            orderItems: remaining, 
+            status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED, 
+            comandaId: isNowAvailable ? "" : t.comandaId, 
+            customerId: isNowAvailable ? undefined : t.customerId,
+            lastUpdate: Date.now() 
+          };
+        }
+        return t;
+      });
+      persistToCloud({ tables: updated, transactions: newTransactions, customers: updatedCustomers });
+      return updated;
+    });
   }, [persistToCloud]);
 
   const markItemAsReady = useCallback((tableId: number, itemId: string) => {
-    const newTables = stateRef.current.tables.map(t => {
-      if (t.id === tableId) {
-        return { ...t, orderItems: t.orderItems.map(oi => oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi), lastUpdate: Date.now() };
-      }
-      return t;
+    setTables(prev => {
+      const updated = prev.map(t => {
+        if (t.id === tableId) {
+          return { ...t, orderItems: t.orderItems.map(oi => oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi), lastUpdate: Date.now() };
+        }
+        return t;
+      });
+      persistToCloud({ tables: updated });
+      return updated;
     });
-    setTables(newTables);
-    persistToCloud({ tables: newTables });
   }, [persistToCloud]);
 
   const handleAddNewTable = useCallback(() => {
-    const nextId = stateRef.current.tables.length > 0 ? Math.max(...stateRef.current.tables.map(t => t.id)) + 1 : 1;
-    const newTables = [...stateRef.current.tables, {
-      id: nextId, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now()
-    }];
-    setTables(newTables);
-    persistToCloud({ tables: newTables });
+    setTables(prev => {
+      const nextId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
+      const updated = [...prev, { id: nextId, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() }];
+      persistToCloud({ tables: updated });
+      return updated;
+    });
   }, [persistToCloud]);
 
   if (!isLoaded) return <div className="loading-screen"><div className="spinner"></div><div className="loading-text">Sincronia Lagoon...</div></div>;
@@ -329,7 +342,6 @@ const App: React.FC = () => {
             </button>
           ))}
         </div>
-        <div className="h-10 mt-6 flex items-center justify-center">{isPinError && <p className="text-red-600 text-[10px] font-black uppercase tracking-widest animate-pulse">PIN Incorreto</p>}</div>
       </div>
     );
   }
