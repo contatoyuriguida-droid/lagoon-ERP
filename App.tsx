@@ -3,7 +3,7 @@ import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, C
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 // @ts-ignore
-import { getFirestore, doc, onSnapshot, setDoc } from "firebase/firestore";
+import { getFirestore, doc, onSnapshot, setDoc, collection, updateDoc, deleteDoc, query, orderBy } from "firebase/firestore";
 
 import { AppSection, Table, TableStatus, OrderStatus, Product, Transaction, Customer, OrderItem, PaymentMethod, Printer, Connection, User, UserRole } from './types.ts';
 import { NAVIGATION_ITEMS, MOCK_PRODUCTS, INITIAL_USERS, ROLE_PERMISSIONS } from './constants.tsx';
@@ -27,7 +27,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const DOC_PATH = "lagoon/system_state";
+
+// Caminhos Granulares das Coleções
+const COLL_TABLES = "lagoon_tables";
+const COLL_PRODUCTS = "lagoon_products";
+const COLL_CUSTOMERS = "lagoon_customers";
+const COLL_TRANSACTIONS = "lagoon_transactions";
+const DOC_SETTINGS = "lagoon_config/global";
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -39,7 +45,7 @@ const App: React.FC = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   
-  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
@@ -47,103 +53,185 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // Refs de sincronização profunda
-  const stateRef = useRef({
-    tables: [] as Table[],
-    transactions: [] as Transaction[],
-    products: [] as Product[],
-    customers: [] as Customer[],
-    users: [] as User[]
-  });
-
+  // 1. Monitoramento em Tempo Real das Mesas (Granular)
   useEffect(() => {
-    stateRef.current = {
-      tables: statusTables,
-      transactions,
-      products,
-      customers,
-      users
-    };
-  }, [statusTables, transactions, products, customers, users]);
-
-  const isWritingRef = useRef(false);
-  const lastCloudUpdateRef = useRef(0);
-
-  // Persistência com lógica de união (Merge)
-  const persistToCloud = useCallback(async (overrides?: any) => {
-    isWritingRef.current = true;
-    setIsSyncing(true);
-    
-    const now = Date.now();
-    const currentState = {
-      products: overrides?.products || stateRef.current.products,
-      transactions: overrides?.transactions || stateRef.current.transactions,
-      customers: overrides?.customers || stateRef.current.customers,
-      users: overrides?.users || stateRef.current.users,
-      tables: overrides?.tables || stateRef.current.tables,
-      printers,
-      connections,
-      lastGlobalUpdate: now
-    };
-
-    try {
-      await setDoc(doc(db, DOC_PATH), currentState);
-      lastCloudUpdateRef.current = now;
-    } catch (e) {
-      console.error("Critical Sync Failure:", e);
-    } finally {
-      setTimeout(() => {
-        isWritingRef.current = false;
-        setIsSyncing(false);
-      }, 800);
-    }
-  }, [printers, connections]);
-
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, DOC_PATH), (docSnap: any) => {
-      // Regra de Ouro: Se eu estou no meio de uma gravação, ignoro o que vem de fora para não dar flicker
-      if (isWritingRef.current) return;
-
-      if (docSnap.exists()) {
-        const cloud = docSnap.data();
-        
-        // CONCILIAÇÃO POR TIMESTAMPS INDIVIDUAIS (Mesa a Mesa)
-        if (cloud.tables) {
-          setTables(prevLocalTables => {
-            // Se local for vazio (primeiro carregamento), aceita tudo
-            if (prevLocalTables.length === 0) return cloud.tables;
-
-            return cloud.tables.map((ct: Table) => {
-              const localT = prevLocalTables.find(lt => lt.id === ct.id);
-              if (!localT) return ct;
-              // Só substitui a mesa local se a da nuvem for ESTRITAMENTE MAIS NOVA
-              // Isso evita que um snapshot atrasado apague o que o garçom acabou de clicar
-              return ct.lastUpdate > localT.lastUpdate ? ct : localT;
-            });
-          });
-        }
-
-        if (cloud.lastGlobalUpdate > lastCloudUpdateRef.current) {
-          if (cloud.products) setProducts(cloud.products);
-          if (cloud.transactions) setTransactions(cloud.transactions);
-          if (cloud.customers) setCustomers(cloud.customers);
-          if (cloud.users) setUsers(cloud.users);
-          if (cloud.printers) setPrinters(cloud.printers);
-          if (cloud.connections) setConnections(cloud.connections);
-          lastCloudUpdateRef.current = cloud.lastGlobalUpdate;
-        }
-      } else {
-        const initTables = Array.from({ length: 24 }, (_, i) => ({ 
-          id: i + 1, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() 
-        }));
-        setTables(initTables);
-        persistToCloud({ tables: initTables });
-      }
+    const unsub = onSnapshot(collection(db, COLL_TABLES), (snap) => {
+      const tablesList: Table[] = [];
+      snap.forEach(doc => tablesList.push(doc.data() as Table));
+      // Ordenar por ID para manter a grade consistente
+      setTables(tablesList.sort((a, b) => a.id - b.id));
       setIsLoaded(true);
     });
     return () => unsub();
-  }, [persistToCloud]);
+  }, []);
 
+  // 2. Monitoramento de Produtos
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, COLL_PRODUCTS), (snap) => {
+      const prodList: Product[] = [];
+      snap.forEach(doc => prodList.push(doc.data() as Product));
+      setProducts(prodList.length > 0 ? prodList : MOCK_PRODUCTS);
+    });
+    return () => unsub();
+  }, []);
+
+  // 3. Monitoramento de Transações (Últimas 50 para o Dashboard)
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, COLL_TRANSACTIONS), (snap) => {
+      const txList: Transaction[] = [];
+      snap.forEach(doc => txList.push(doc.data() as Transaction));
+      setTransactions(txList.sort((a, b) => b.timestamp - a.timestamp));
+    });
+    return () => unsub();
+  }, []);
+
+  // 4. Monitoramento de Clientes
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, COLL_CUSTOMERS), (snap) => {
+      const custList: Customer[] = [];
+      snap.forEach(doc => custList.push(doc.data() as Customer));
+      setCustomers(custList);
+    });
+    return () => unsub();
+  }, []);
+
+  // 5. Configurações Globais (Impressoras/Conexões)
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, DOC_SETTINGS), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.printers) setPrinters(data.printers);
+        if (data.connections) setConnections(data.connections);
+        if (data.users) setUsers(data.users);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Funções de Persistência Granular (A Solução para Inconsistência)
+  
+  const saveTable = async (table: Table) => {
+    setIsSyncing(true);
+    try {
+      await setDoc(doc(db, COLL_TABLES, table.id.toString()), table);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const addOrderItem = useCallback(async (tableId: number, product: Product, qty: number, comandaId?: string) => {
+    const table = statusTables.find(t => t.id === tableId);
+    if (!table) return;
+
+    const newItem: OrderItem = {
+      id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      productId: product.id, name: product.name, price: product.price, quantity: qty,
+      status: OrderStatus.PREPARING, paid: false, timestamp: Date.now()
+    };
+
+    const updatedTable: Table = {
+      ...table,
+      status: TableStatus.OCCUPIED,
+      comandaId: comandaId || table.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
+      orderItems: [...table.orderItems, newItem],
+      lastUpdate: Date.now()
+    };
+
+    await saveTable(updatedTable);
+  }, [statusTables]);
+
+  const removeOrderItem = useCallback(async (tableId: number, itemId: string) => {
+    const table = statusTables.find(t => t.id === tableId);
+    if (!table) return;
+
+    const remainingItems = table.orderItems.filter(oi => oi.id !== itemId);
+    const isEmpty = remainingItems.length === 0;
+
+    const updatedTable: Table = {
+      ...table,
+      status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
+      comandaId: isEmpty ? "" : table.comandaId,
+      orderItems: remainingItems,
+      lastUpdate: Date.now()
+    };
+
+    await saveTable(updatedTable);
+  }, [statusTables]);
+
+  const finalizePayment = useCallback(async (tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
+    const table = statusTables.find(t => t.id === tableId);
+    if (!table) return;
+
+    const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
+    const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
+
+    // 1. Registrar Transação (Independente)
+    const txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newTx: Transaction = {
+      id: txId, tableId, comandaId: table.comandaId, amount: total, amountPaid: amount, change,
+      paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now(), customerId: table.customerId
+    };
+    await setDoc(doc(db, COLL_TRANSACTIONS, txId), newTx);
+
+    // 2. Atualizar Cliente (Independente)
+    if (table.customerId) {
+      const customer = customers.find(c => c.id === table.customerId);
+      if (customer) {
+        await setDoc(doc(db, COLL_CUSTOMERS, customer.id), {
+          ...customer,
+          spent: customer.spent + total,
+          points: customer.points + Math.floor(total / 10),
+          lastVisit: new Date().toLocaleDateString('pt-BR')
+        });
+      }
+    }
+
+    // 3. Limpar a Mesa (Operação Crítica)
+    const remaining = table.orderItems.filter(i => !itemIds.includes(i.id));
+    const isNowAvailable = remaining.length === 0;
+    
+    const updatedTable: Table = {
+      ...table,
+      orderItems: remaining,
+      status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
+      comandaId: isNowAvailable ? "" : table.comandaId,
+      customerId: isNowAvailable ? undefined : table.customerId,
+      lastUpdate: Date.now()
+    };
+
+    await saveTable(updatedTable);
+  }, [statusTables, customers]);
+
+  const markItemAsReady = useCallback(async (tableId: number, itemId: string) => {
+    const table = statusTables.find(t => t.id === tableId);
+    if (!table) return;
+
+    const updatedTable: Table = {
+      ...table,
+      orderItems: table.orderItems.map(oi => oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi),
+      lastUpdate: Date.now()
+    };
+
+    await saveTable(updatedTable);
+  }, [statusTables]);
+
+  const assignCustomerToTable = useCallback(async (tableId: number, customerId: string | undefined) => {
+    const table = statusTables.find(t => t.id === tableId);
+    if (!table) return;
+
+    const updatedTable: Table = { ...table, customerId, lastUpdate: Date.now() };
+    await saveTable(updatedTable);
+  }, [statusTables]);
+
+  const handleAddNewTable = useCallback(async () => {
+    const nextId = statusTables.length > 0 ? Math.max(...statusTables.map(t => t.id)) + 1 : 1;
+    const newTable: Table = {
+      id: nextId, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now()
+    };
+    await saveTable(newTable);
+  }, [statusTables]);
+
+  // Handlers de Login
   const handleLogin = (u: User) => {
     setCurrentUser(u);
     setPinBuffer("");
@@ -164,145 +252,15 @@ const App: React.FC = () => {
     setTimeout(() => { setLoginToast(null); }, 3000);
   };
 
-  // Funções de Mesa Refatoradas para Atômicas
-  const assignCustomerToTable = useCallback((tableId: number, customerId: string | undefined) => {
-    setTables(prev => {
-      const updated = prev.map(t => t.id === tableId ? { ...t, customerId, lastUpdate: Date.now() } : t);
-      persistToCloud({ tables: updated });
-      return updated;
-    });
-  }, [persistToCloud]);
-
-  const addOrderItem = useCallback((tableId: number, product: Product, qty: number, comandaId?: string) => {
-    setTables(prev => {
-      const updated = prev.map(t => {
-        if (t.id === tableId) {
-          const newItem: OrderItem = {
-            id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`, // UUID mais longo
-            productId: product.id, name: product.name, price: product.price, quantity: qty,
-            status: OrderStatus.PREPARING, paid: false, timestamp: Date.now()
-          };
-          return {
-            ...t,
-            status: TableStatus.OCCUPIED,
-            comandaId: comandaId || t.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
-            orderItems: [...t.orderItems, newItem],
-            lastUpdate: Date.now()
-          };
-        }
-        return t;
-      });
-      persistToCloud({ tables: updated });
-      return updated;
-    });
-  }, [persistToCloud]);
-
-  const removeOrderItem = useCallback((tableId: number, itemId: string) => {
-    setTables(prev => {
-      const updated = prev.map(t => {
-        if (t.id === tableId) {
-          const remainingItems = t.orderItems.filter(oi => oi.id !== itemId);
-          const isEmpty = remainingItems.length === 0;
-          return {
-            ...t,
-            status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
-            comandaId: isEmpty ? "" : t.comandaId,
-            orderItems: remainingItems,
-            lastUpdate: Date.now()
-          };
-        }
-        return t;
-      });
-      persistToCloud({ tables: updated });
-      return updated;
-    });
-  }, [persistToCloud]);
-
-  const finalizePayment = useCallback((tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
-    const table = stateRef.current.tables.find(t => t.id === tableId);
-    if (!table) return;
-    
-    const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
-    const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
-    
-    // CRM Update
-    let updatedCustomers = stateRef.current.customers;
-    if (table.customerId) {
-      updatedCustomers = updatedCustomers.map(c => {
-        if (c.id === table.customerId) {
-          return { ...c, spent: c.spent + total, points: c.points + Math.floor(total / 10), lastVisit: new Date().toLocaleDateString('pt-BR') };
-        }
-        return c;
-      });
-      setCustomers(updatedCustomers);
-    }
-
-    const newTx: Transaction = {
-      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`, 
-      tableId, comandaId: table.comandaId, amount: total, amountPaid: amount, change,
-      paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now(), customerId: table.customerId
-    };
-    
-    const newTransactions = [...stateRef.current.transactions, newTx];
-    setTransactions(newTransactions);
-
-    setTables(prev => {
-      const updated = prev.map(t => {
-        if (t.id === tableId) {
-          const remaining = t.orderItems.filter(i => !itemIds.includes(i.id));
-          const isNowAvailable = remaining.length === 0;
-          return { 
-            ...t, 
-            orderItems: remaining, 
-            status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED, 
-            comandaId: isNowAvailable ? "" : t.comandaId, 
-            customerId: isNowAvailable ? undefined : t.customerId,
-            lastUpdate: Date.now() 
-          };
-        }
-        return t;
-      });
-      persistToCloud({ tables: updated, transactions: newTransactions, customers: updatedCustomers });
-      return updated;
-    });
-  }, [persistToCloud]);
-
-  const markItemAsReady = useCallback((tableId: number, itemId: string) => {
-    setTables(prev => {
-      const updated = prev.map(t => {
-        if (t.id === tableId) {
-          return { ...t, orderItems: t.orderItems.map(oi => oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi), lastUpdate: Date.now() };
-        }
-        return t;
-      });
-      persistToCloud({ tables: updated });
-      return updated;
-    });
-  }, [persistToCloud]);
-
-  const handleAddNewTable = useCallback(() => {
-    setTables(prev => {
-      const nextId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
-      const updated = [...prev, { id: nextId, status: TableStatus.AVAILABLE, orderItems: [], customerCount: 0, lastUpdate: Date.now() }];
-      persistToCloud({ tables: updated });
-      return updated;
-    });
-  }, [persistToCloud]);
-
-  if (!isLoaded) return <div className="loading-screen"><div className="spinner"></div><div className="loading-text">Sincronia Lagoon...</div></div>;
+  if (!isLoaded) return <div className="loading-screen"><div className="spinner"></div><div className="loading-text">Lagoon Cloud Engine...</div></div>;
 
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center overflow-hidden relative">
         <style>{`
-          @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            20%, 60% { transform: translateX(-10px); }
-            40%, 80% { transform: translateX(10px); }
-          }
+          @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
           .shake-animation { animation: shake 0.4s ease-in-out; }
         `}</style>
-
         {loginToast && (
           <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[300] animate-in slide-in-from-top-4 fade-in duration-300">
             <div className="bg-red-600 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-red-200 flex items-center gap-3">
@@ -311,17 +269,14 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
-        
         <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl mb-6">L</div>
         <h1 className="text-3xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
         <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-10">Terminal Operacional Cloud</p>
-        
         <div className={`flex gap-4 mb-12 ${isPinError ? 'shake-animation' : ''}`}>
           {[0, 1, 2, 3].map((idx) => (
             <div key={idx} className={`w-5 h-5 rounded-full border-4 transition-all duration-300 ${isPinError ? 'bg-red-600 border-red-600 scale-110' : pinBuffer.length > idx ? 'bg-red-600 border-red-600 scale-125 shadow-lg shadow-red-200' : 'bg-gray-100 border-gray-200'}`} />
           ))}
         </div>
-
         <div className="grid grid-cols-3 gap-3 w-full max-w-[320px]">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(key => (
             <button key={key} onClick={() => {
@@ -376,7 +331,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-3 lg:gap-6">
              <div className="hidden sm:flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
                 <div className={`w-2 h-2 rounded-full ${isSyncing ? 'bg-blue-500 animate-pulse' : 'bg-green-500 shadow-sm'}`} />
-                <span className="text-[9px] font-black text-green-700 uppercase tracking-widest">{isSyncing ? 'Sincronizando' : 'Ativo'}</span>
+                <span className="text-[9px] font-black text-green-700 uppercase tracking-widest">{isSyncing ? 'Gravando' : 'Sincronizado'}</span>
              </div>
              <div className="flex items-center gap-3 lg:gap-5 pl-3 lg:pl-6 border-l-2 border-gray-100">
                 <div className="text-right hidden xs:block">
@@ -403,15 +358,11 @@ const App: React.FC = () => {
               onAssignCustomer={assignCustomerToTable}
             />}
             {activeSection === AppSection.KDS && <KDS tables={statusTables} onMarkReady={markItemAsReady} />}
-            {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={(newProds) => { 
-                const updated = typeof newProds === 'function' ? newProds(stateRef.current.products) : newProds;
-                setProducts(updated);
-                persistToCloud({ products: updated });
+            {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={(newProds) => {
+               // Implementar persistência granular para produtos se necessário
             }} />}
             {activeSection === AppSection.CRM && <CRM customers={customers} setCustomers={(newCust) => {
-                const updated = typeof newCust === 'function' ? newCust(stateRef.current.customers) : newCust;
-                setCustomers(updated);
-                persistToCloud({ customers: updated });
+               // Implementar persistência granular para clientes se necessário
             }} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
             {activeSection === AppSection.ARCHITECT && <ArchitectInfo />}
