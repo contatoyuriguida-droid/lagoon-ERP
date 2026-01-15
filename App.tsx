@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, Check, Printer as PrinterIcon, User as UserIcon, ShieldCheck } from 'lucide-react';
+import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, Check, Printer as PrinterIcon, User as UserIcon, ShieldCheck, ShieldAlert } from 'lucide-react';
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 // @ts-ignore
@@ -33,6 +33,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [pinBuffer, setPinBuffer] = useState<string>("");
   const [isPinError, setIsPinError] = useState<boolean>(false);
+  const [loginToast, setLoginToast] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<AppSection>(AppSection.DASHBOARD);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -118,6 +119,7 @@ const App: React.FC = () => {
     setCurrentUser(u);
     setPinBuffer("");
     setIsPinError(false);
+    setLoginToast(null);
     if (u.role === UserRole.WAITER) {
       setActiveSection(AppSection.POS);
       setIsSidebarOpen(false);
@@ -128,11 +130,17 @@ const App: React.FC = () => {
 
   const handleWrongPin = () => {
     setIsPinError(true);
-    // Vibração visual e limpeza automática
+    setLoginToast("ACESSO NEGADO: OPERADOR NÃO ENCONTRADO");
+    
+    // Vibração visual, limpeza automática e remoção do toast
     setTimeout(() => {
       setPinBuffer("");
       setIsPinError(false);
     }, 600);
+
+    setTimeout(() => {
+      setLoginToast(null);
+    }, 3000);
   };
 
   const assignCustomerToTable = useCallback((tableId: number, customerId: string | undefined) => {
@@ -266,7 +274,7 @@ const App: React.FC = () => {
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center overflow-hidden">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center overflow-hidden relative">
         <style>{`
           @keyframes shake {
             0%, 100% { transform: translateX(0); }
@@ -275,6 +283,16 @@ const App: React.FC = () => {
           }
           .shake-animation { animation: shake 0.4s ease-in-out; }
         `}</style>
+
+        {/* Login Toast Layer */}
+        {loginToast && (
+          <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[300] animate-in slide-in-from-top-4 fade-in duration-300">
+            <div className="bg-red-600 text-white px-8 py-4 rounded-2xl shadow-2xl shadow-red-200 flex items-center gap-3">
+              <ShieldAlert size={20} className="animate-pulse" />
+              <span className="font-black text-[10px] uppercase tracking-[0.2em]">{loginToast}</span>
+            </div>
+          </div>
+        )}
         
         <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl mb-6">L</div>
         <h1 className="text-3xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
@@ -299,13 +317,17 @@ const App: React.FC = () => {
               key={key} 
               onClick={() => {
                 if (isPinError) return;
-                if (key === 'C') setPinBuffer("");
+                if (key === 'C') {
+                  setPinBuffer("");
+                  setIsPinError(false);
+                }
                 else if (key === 'OK') {
                   const u = users.find(u => u.pin === pinBuffer);
                   if (u) handleLogin(u);
                   else handleWrongPin();
                 } else if (pinBuffer.length < 4) {
                   setPinBuffer(p => p + String(key));
+                  if (loginToast) setLoginToast(null);
                 }
               }} 
               className="h-16 rounded-2xl flex items-center justify-center font-black text-xl bg-white border-2 border-gray-100 text-gray-800 shadow-sm active:bg-red-600 active:text-white transform active:scale-95 transition-all select-none"
@@ -315,7 +337,9 @@ const App: React.FC = () => {
           ))}
         </div>
         
-        {isPinError && <p className="text-red-600 text-[10px] font-black uppercase tracking-widest mt-8 animate-pulse">PIN Incorreto</p>}
+        <div className="h-10 mt-6 flex items-center justify-center">
+          {isPinError && <p className="text-red-600 text-[10px] font-black uppercase tracking-widest animate-pulse">PIN Incorreto</p>}
+        </div>
       </div>
     );
   }
