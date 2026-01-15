@@ -124,6 +124,17 @@ const App: React.FC = () => {
     }
   };
 
+  const assignCustomerToTable = useCallback((tableId: number, customerId: string | undefined) => {
+    const newTables = tablesRef.current.map(t => {
+      if (t.id === tableId) {
+        return { ...t, customerId, lastUpdate: Date.now() };
+      }
+      return t;
+    });
+    setTables(newTables);
+    persistToCloud({ tables: newTables, priority: true });
+  }, [persistToCloud]);
+
   const addOrderItem = useCallback((tableId: number, product: Product, qty: number, comandaId?: string) => {
     const newTables = tablesRef.current.map(t => {
       if (t.id === tableId) {
@@ -170,22 +181,50 @@ const App: React.FC = () => {
     if (!table) return;
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
+    
+    // Atualiza dados do cliente se vinculado
+    let updatedCustomers = customersRef.current;
+    if (table.customerId) {
+      updatedCustomers = updatedCustomers.map(c => {
+        if (c.id === table.customerId) {
+          const addedPoints = Math.floor(total / 10); // Lógica: R$ 10 = 1 ponto
+          return {
+            ...c,
+            spent: c.spent + total,
+            points: c.points + addedPoints,
+            lastVisit: new Date().toLocaleDateString('pt-BR')
+          };
+        }
+        return c;
+      });
+      setCustomers(updatedCustomers);
+    }
+
     const newTx: Transaction = {
       id: `tx-${Date.now()}`, tableId, comandaId: table.comandaId, amount: total, amountPaid: amount, change,
-      paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now()
+      paymentMethod: method, itemsCount: itemIds.length, timestamp: Date.now(), customerId: table.customerId
     };
+    
     const newTransactions = [...transactionsRef.current, newTx];
     const newTables = tablesRef.current.map(t => {
       if (t.id === tableId) {
         const remaining = t.orderItems.filter(i => !itemIds.includes(i.id));
         const isNowAvailable = remaining.length === 0;
-        return { ...t, orderItems: remaining, status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED, comandaId: isNowAvailable ? "" : t.comandaId, lastUpdate: Date.now() };
+        return { 
+          ...t, 
+          orderItems: remaining, 
+          status: isNowAvailable ? TableStatus.AVAILABLE : TableStatus.OCCUPIED, 
+          comandaId: isNowAvailable ? "" : t.comandaId, 
+          customerId: isNowAvailable ? undefined : t.customerId,
+          lastUpdate: Date.now() 
+        };
       }
       return t;
     });
+    
     setTransactions(newTransactions);
     setTables(newTables);
-    persistToCloud({ tables: newTables, transactions: newTransactions, priority: true });
+    persistToCloud({ tables: newTables, transactions: newTransactions, customers: updatedCustomers, priority: true });
   }, [persistToCloud]);
 
   const markItemAsReady = useCallback((tableId: number, itemId: string) => {
@@ -294,7 +333,17 @@ const App: React.FC = () => {
 
         <main className="flex-1 overflow-auto p-3 lg:p-10">
             {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} printers={printers} />}
-            {activeSection === AppSection.POS && <POS currentUser={currentUser} tables={statusTables} products={products} onAddItems={addOrderItem} onRemoveItem={removeOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} />}
+            {activeSection === AppSection.POS && <POS 
+              currentUser={currentUser} 
+              tables={statusTables} 
+              products={products} 
+              customers={customers}
+              onAddItems={addOrderItem} 
+              onRemoveItem={removeOrderItem} 
+              onFinalize={finalizePayment} 
+              onAddTable={handleAddNewTable}
+              onAssignCustomer={assignCustomerToTable}
+            />}
             {activeSection === AppSection.KDS && <KDS tables={statusTables} onMarkReady={markItemAsReady} />}
             {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={(newProds) => { 
                 const updated = typeof newProds === 'function' ? newProds(products) : newProds;

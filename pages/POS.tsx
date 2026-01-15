@@ -1,15 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, LayoutGrid, List, ChevronRight, CheckCircle2, Trash2 } from 'lucide-react';
+import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, LayoutGrid, List, ChevronRight, CheckCircle2, Trash2, UserPlus, UserCheck } from 'lucide-react';
 import { Table, TableStatus, Product, Customer, PaymentMethod, User, UserRole } from '../types.ts';
 
 interface POSProps {
   currentUser: User;
   tables: Table[];
   products: Product[];
+  customers: Customer[];
   onAddItems: (tableId: number, product: Product, quantity: number) => void;
   onRemoveItem: (tableId: number, itemId: string) => void;
   onFinalize: (tableId: number, itemIds: string[], method: PaymentMethod, amountPaid: number, change: number) => void;
   onAddTable: () => void;
+  onAssignCustomer: (tableId: number, customerId: string | undefined) => void;
 }
 
 interface Toast {
@@ -17,21 +19,29 @@ interface Toast {
   message: string;
 }
 
-const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, onRemoveItem, onFinalize, onAddTable }) => {
+const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onAddItems, onRemoveItem, onFinalize, onAddTable, onAssignCustomer }) => {
   const [activeTab, setActiveTab] = useState<'TABLES' | 'COMANDAS'>('TABLES');
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [isAddingItems, setIsAddingItems] = useState(false);
   const [isClosingBill, setIsClosingBill] = useState(false);
+  const [isSelectingCustomer, setIsSelectingCustomer] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [amountReceived, setAmountReceived] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [custSearchTerm, setCustSearchTerm] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const currentTable = useMemo(() => tables.find(t => t.id === selectedTableId), [tables, selectedTableId]);
+  const linkedCustomer = useMemo(() => customers.find(c => c.id === currentTable?.customerId), [customers, currentTable]);
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.category.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [products, searchTerm]);
+
+  const filteredCustomers = useMemo(() => {
+    if (!custSearchTerm) return customers.slice(0, 5);
+    return customers.filter(c => c.name.toLowerCase().includes(custSearchTerm.toLowerCase())).slice(0, 10);
+  }, [customers, custSearchTerm]);
 
   const totalBill = useMemo(() => {
     if (!currentTable) return 0;
@@ -119,7 +129,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
 
       {currentTable && (
         <div className="fixed inset-0 z-[100] flex justify-end">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if(!isAddingItems) setSelectedTableId(null); }} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if(!isAddingItems && !isSelectingCustomer) setSelectedTableId(null); }} />
           <div className="relative w-full max-w-lg bg-white h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
             <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
               <div className="flex items-center gap-4">
@@ -163,12 +173,46 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
                      ))}
                    </div>
                 </div>
+              ) : isSelectingCustomer ? (
+                <div className="p-4 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                   <div className="flex items-center justify-between px-2">
+                      <h3 className="font-black uppercase text-[10px] tracking-widest text-gray-400">Vincular para Fidelidade</h3>
+                      <button onClick={() => setIsSelectingCustomer(false)} className="text-gray-400"><X size={16} /></button>
+                   </div>
+                   <div className="relative">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input 
+                        autoFocus
+                        type="text" 
+                        placeholder="Buscar cliente..." 
+                        value={custSearchTerm}
+                        onChange={(e) => setCustSearchTerm(e.target.value)}
+                        className="w-full pl-12 pr-4 py-4 bg-white rounded-2xl border-none shadow-sm font-bold text-sm outline-none focus:ring-2 focus:ring-red-600"
+                      />
+                   </div>
+                   <div className="space-y-2">
+                      {filteredCustomers.map(c => (
+                        <button key={c.id} onClick={() => { onAssignCustomer(currentTable.id, c.id); setIsSelectingCustomer(false); showToast(`Vinculado: ${c.name}`); }} className="w-full p-4 bg-white border border-gray-100 rounded-2xl flex items-center gap-4 hover:border-red-600 transition-all text-left group">
+                           <div className="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center font-black">{c.name[0]}</div>
+                           <div className="flex-1">
+                              <p className="font-black text-sm text-gray-800 uppercase leading-none mb-1">{c.name}</p>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{c.points} PONTOS</p>
+                           </div>
+                           <ChevronRight size={16} className="text-gray-200 group-hover:text-red-600" />
+                        </button>
+                      ))}
+                      {filteredCustomers.length === 0 && (
+                        <div className="py-10 text-center text-gray-400 italic text-xs">Nenhum cliente encontrado.</div>
+                      )}
+                   </div>
+                </div>
               ) : isClosingBill ? (
                 <div className="p-6 space-y-6">
                   <div className="bg-red-600 p-10 rounded-3xl shadow-xl shadow-red-100 text-white text-center relative overflow-hidden">
                     <div className="relative z-10">
                       <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-2">Total do Fechamento</p>
                       <p className="text-5xl font-black">R$ {totalBill.toFixed(2)}</p>
+                      {linkedCustomer && <p className="text-[10px] font-black uppercase mt-4 tracking-widest bg-white/20 px-3 py-1 rounded-full inline-block">+{Math.floor(totalBill / 10)} PONTOS PARA {linkedCustomer.name}</p>}
                     </div>
                     <div className="absolute -right-6 -bottom-6 opacity-10 rotate-12"><DollarSign size={120} /></div>
                   </div>
@@ -191,42 +235,64 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
                   )}
                 </div>
               ) : (
-                <div className="p-4 space-y-3">
-                   {currentTable.orderItems.map(item => (
-                     <div key={item.id} className="p-4 bg-white rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm relative overflow-hidden group animate-in fade-in slide-in-from-left-2">
-                        {item.status === 'READY' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-green-500" />}
-                        <div className="flex items-center gap-4">
-                           <span className="w-10 h-10 flex items-center justify-center bg-red-50 text-red-600 rounded-xl text-xs font-black">{item.quantity}x</span>
-                           <div>
-                              <p className="font-black text-[13px] text-gray-800 uppercase leading-none mb-1">{item.name}</p>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${item.status === 'READY' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                  {item.status === 'READY' ? 'PRONTO' : 'NA BRASA'}
-                                </span>
-                                <span className="text-[9px] text-gray-300 font-bold">{new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                <div className="p-4 space-y-4">
+                   {/* Vínculo Opcional de Cliente */}
+                   <div className="px-1">
+                      {linkedCustomer ? (
+                        <div className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-2">
+                           <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 bg-red-600 text-white rounded-xl flex items-center justify-center"><UserCheck size={16} /></div>
+                              <div>
+                                 <p className="text-[11px] font-black text-red-600 uppercase tracking-widest">{linkedCustomer.name}</p>
+                                 <p className="text-[9px] text-red-400 font-bold uppercase tracking-tighter">Acumulando Fidelidade</p>
                               </div>
                            </div>
+                           <button onClick={() => onAssignCustomer(currentTable.id, undefined)} className="text-red-300 hover:text-red-600"><X size={16} /></button>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <p className="font-black text-sm text-gray-900">R$ {(item.price * item.quantity).toFixed(2)}</p>
-                          <button 
-                            onClick={() => {
-                              onRemoveItem(currentTable.id, item.id);
-                              showToast(`Removido: ${item.name}`);
-                            }} 
-                            className="p-2 text-gray-300 hover:text-red-600 active:scale-90 transition-all"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                     </div>
-                   ))}
-                   {currentTable.orderItems.length === 0 && (
-                     <div className="py-20 flex flex-col items-center opacity-20">
-                        <ShoppingBag size={64} className="mb-4" />
-                        <p className="font-black uppercase tracking-widest text-xs italic">A mesa está vazia</p>
-                     </div>
-                   )}
+                      ) : (
+                        <button onClick={() => setIsSelectingCustomer(true)} className="w-full p-3 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center gap-2 text-gray-400 hover:border-red-200 hover:text-red-600 transition-all">
+                           <UserPlus size={16} /> <span className="text-[10px] font-black uppercase tracking-widest">Vincular Cliente (Opcional)</span>
+                        </button>
+                      )}
+                   </div>
+
+                   <div className="space-y-3">
+                     {currentTable.orderItems.map(item => (
+                       <div key={item.id} className="p-4 bg-white rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm relative overflow-hidden group animate-in fade-in slide-in-from-left-2">
+                          {item.status === 'READY' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-green-500" />}
+                          <div className="flex items-center gap-4">
+                             <span className="w-10 h-10 flex items-center justify-center bg-red-50 text-red-600 rounded-xl text-xs font-black">{item.quantity}x</span>
+                             <div>
+                                <p className="font-black text-[13px] text-gray-800 uppercase leading-none mb-1">{item.name}</p>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${item.status === 'READY' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                    {item.status === 'READY' ? 'PRONTO' : 'NA BRASA'}
+                                  </span>
+                                  <span className="text-[9px] text-gray-300 font-bold">{new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                </div>
+                             </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <p className="font-black text-sm text-gray-900">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                            <button 
+                              onClick={() => {
+                                onRemoveItem(currentTable.id, item.id);
+                                showToast(`Removido: ${item.name}`);
+                              }} 
+                              className="p-2 text-gray-300 hover:text-red-600 active:scale-90 transition-all"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                       </div>
+                     ))}
+                     {currentTable.orderItems.length === 0 && (
+                       <div className="py-20 flex flex-col items-center opacity-20">
+                          <ShoppingBag size={64} className="mb-4" />
+                          <p className="font-black uppercase tracking-widest text-xs italic">A mesa está vazia</p>
+                       </div>
+                     )}
+                   </div>
                 </div>
               )}
             </div>
@@ -234,6 +300,8 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, onAddItems, on
             <div className="p-6 bg-white border-t border-gray-100 space-y-3 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] sticky bottom-0">
                {isAddingItems ? (
                  <button onClick={() => {setIsAddingItems(false); setSearchTerm("");}} className="w-full py-5 bg-red-600 text-white font-black rounded-2xl uppercase text-xs tracking-[0.2em] shadow-xl shadow-red-200 active:scale-95 transition-all">CONCLUIR LANÇAMENTO</button>
+               ) : isSelectingCustomer ? (
+                 <button onClick={() => setIsSelectingCustomer(false)} className="w-full py-5 bg-gray-100 text-gray-400 font-black rounded-2xl uppercase text-xs tracking-[0.2em] active:scale-95 transition-all">VOLTAR PARA RESUMO</button>
                ) : isClosingBill ? (
                  <div className="flex gap-3">
                     <button onClick={() => setIsClosingBill(false)} className="px-6 py-5 bg-gray-50 text-gray-400 font-black rounded-2xl uppercase text-xs active:scale-95 transition-all"><ArrowLeftRight size={18} /></button>

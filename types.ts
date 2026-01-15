@@ -65,6 +65,7 @@ export interface Table {
   orderItems: OrderItem[];
   customerCount: number;
   lastUpdate: number;
+  customerId?: string; // Vínculo opcional com o CRM
 }
 
 export interface Transaction {
