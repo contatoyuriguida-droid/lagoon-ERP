@@ -32,6 +32,7 @@ const DOC_PATH = "lagoon/system_state";
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [pinBuffer, setPinBuffer] = useState<string>("");
+  const [isPinError, setIsPinError] = useState<boolean>(false);
   const [activeSection, setActiveSection] = useState<AppSection>(AppSection.DASHBOARD);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -116,12 +117,22 @@ const App: React.FC = () => {
   const handleLogin = (u: User) => {
     setCurrentUser(u);
     setPinBuffer("");
+    setIsPinError(false);
     if (u.role === UserRole.WAITER) {
       setActiveSection(AppSection.POS);
       setIsSidebarOpen(false);
     } else {
       setActiveSection(AppSection.DASHBOARD);
     }
+  };
+
+  const handleWrongPin = () => {
+    setIsPinError(true);
+    // Vibração visual e limpeza automática
+    setTimeout(() => {
+      setPinBuffer("");
+      setIsPinError(false);
+    }, 600);
   };
 
   const assignCustomerToTable = useCallback((tableId: number, customerId: string | undefined) => {
@@ -182,12 +193,11 @@ const App: React.FC = () => {
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
     
-    // Atualiza dados do cliente se vinculado
     let updatedCustomers = customersRef.current;
     if (table.customerId) {
       updatedCustomers = updatedCustomers.map(c => {
         if (c.id === table.customerId) {
-          const addedPoints = Math.floor(total / 10); // Lógica: R$ 10 = 1 ponto
+          const addedPoints = Math.floor(total / 10);
           return {
             ...c,
             spent: c.spent + total,
@@ -257,26 +267,55 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center overflow-hidden">
+        <style>{`
+          @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-10px); }
+            40%, 80% { transform: translateX(10px); }
+          }
+          .shake-animation { animation: shake 0.4s ease-in-out; }
+        `}</style>
+        
         <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-xl mb-6">L</div>
         <h1 className="text-3xl font-black text-gray-900 mb-1">Lagoon <span className="text-red-600">GastroBar</span></h1>
         <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.3em] mb-10">Terminal Operacional Cloud</p>
-        <div className="flex gap-4 mb-12">
+        
+        <div className={`flex gap-4 mb-12 ${isPinError ? 'shake-animation' : ''}`}>
           {[0, 1, 2, 3].map((idx) => (
-            <div key={idx} className={`w-5 h-5 rounded-full border-4 transition-all duration-300 ${pinBuffer.length > idx ? 'bg-red-600 border-red-600 scale-125 shadow-lg shadow-red-200' : 'bg-gray-100 border-gray-200'}`} />
+            <div 
+              key={idx} 
+              className={`w-5 h-5 rounded-full border-4 transition-all duration-300 ${
+                isPinError ? 'bg-red-600 border-red-600 scale-110' :
+                pinBuffer.length > idx ? 'bg-red-600 border-red-600 scale-125 shadow-lg shadow-red-200' : 
+                'bg-gray-100 border-gray-200'
+              }`} 
+            />
           ))}
         </div>
+
         <div className="grid grid-cols-3 gap-3 w-full max-w-[320px]">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 'C', 0, 'OK'].map(key => (
-            <button key={key} onClick={() => {
-              if (key === 'C') setPinBuffer("");
-              else if (key === 'OK') {
-                const u = users.find(u => u.pin === pinBuffer);
-                if (u) handleLogin(u);
-                else setPinBuffer("");
-              } else if (pinBuffer.length < 4) setPinBuffer(p => p + String(key));
-            }} className="h-16 rounded-2xl flex items-center justify-center font-black text-xl bg-white border-2 border-gray-100 text-gray-800 shadow-sm active:bg-red-600 active:text-white transform active:scale-95 transition-all select-none">{key}</button>
+            <button 
+              key={key} 
+              onClick={() => {
+                if (isPinError) return;
+                if (key === 'C') setPinBuffer("");
+                else if (key === 'OK') {
+                  const u = users.find(u => u.pin === pinBuffer);
+                  if (u) handleLogin(u);
+                  else handleWrongPin();
+                } else if (pinBuffer.length < 4) {
+                  setPinBuffer(p => p + String(key));
+                }
+              }} 
+              className="h-16 rounded-2xl flex items-center justify-center font-black text-xl bg-white border-2 border-gray-100 text-gray-800 shadow-sm active:bg-red-600 active:text-white transform active:scale-95 transition-all select-none"
+            >
+              {key}
+            </button>
           ))}
         </div>
+        
+        {isPinError && <p className="text-red-600 text-[10px] font-black uppercase tracking-widest mt-8 animate-pulse">PIN Incorreto</p>}
       </div>
     );
   }
