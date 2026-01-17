@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { TrendingUp, DollarSign, Clock, Printer, Wifi, ShieldCheck, Zap, Activity, AlertCircle, CheckCircle2, ArrowRight } from 'lucide-react';
+import { TrendingUp, DollarSign, Clock, Printer, Wifi, ShieldCheck, Zap, Activity, AlertCircle, CheckCircle2, ArrowRight, Calendar } from 'lucide-react';
 import { Transaction, Product, Printer as PrinterType } from '../types.ts';
 
 interface DashboardProps {
@@ -9,22 +9,72 @@ interface DashboardProps {
   printers: PrinterType[];
 }
 
+type Period = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'ALL';
+
 const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers }) => {
+  const [period, setPeriod] = useState<Period>('TODAY');
+
+  // Lógica de Filtragem de Transações
+  const filteredTransactions = useMemo(() => {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    
+    return transactions.filter(t => {
+      const txTime = t.timestamp;
+      
+      switch (period) {
+        case 'TODAY':
+          return txTime >= startOfDay;
+        case 'YESTERDAY':
+          const yesterdayStart = startOfDay - (24 * 60 * 60 * 1000);
+          return txTime >= yesterdayStart && txTime < startOfDay;
+        case 'WEEK':
+          return txTime >= (now.getTime() - (7 * 24 * 60 * 60 * 1000));
+        case 'MONTH':
+          return txTime >= (now.getTime() - (30 * 24 * 60 * 60 * 1000));
+        case 'ALL':
+          return true;
+        default:
+          return true;
+      }
+    });
+  }, [transactions, period]);
+
   const metrics = useMemo(() => {
-    const totalSales = transactions.reduce((sum, t) => sum + t.amount, 0);
-    const avgTicket = transactions.length > 0 ? totalSales / transactions.length : 0;
+    const totalSales = filteredTransactions.reduce((sum, t) => sum + t.amount, 0);
+    const avgTicket = filteredTransactions.length > 0 ? totalSales / filteredTransactions.length : 0;
     
     return {
       sales: `R$ ${totalSales.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
       ticket: `R$ ${avgTicket.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-      count: transactions.length
+      count: filteredTransactions.length
     };
-  }, [transactions]);
+  }, [filteredTransactions]);
 
-  // Lógica de Inteligência de Estoque
+  // Preparação de dados para o gráfico baseado no filtro
+  const chartData = useMemo(() => {
+    if (period === 'TODAY' || period === 'YESTERDAY') {
+      // Agrupar por hora
+      const hours = Array.from({ length: 24 }, (_, i) => ({ name: `${i}h`, v: 0 }));
+      filteredTransactions.forEach(t => {
+        const hour = new Date(t.timestamp).getHours();
+        hours[hour].v += t.amount;
+      });
+      return hours.filter((h, i) => i >= 8 && i <= 23); // Focar no horário de operação
+    } else {
+      // Agrupar por dia
+      const days: Record<string, number> = {};
+      filteredTransactions.forEach(t => {
+        const date = new Date(t.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        days[date] = (days[date] || 0) + t.amount;
+      });
+      return Object.entries(days).map(([name, v]) => ({ name, v })).reverse();
+    }
+  }, [filteredTransactions, period]);
+
   const lowStockItems = useMemo(() => {
     return products
-      .filter(p => p.stock < 15) // Limite configurado para alerta
+      .filter(p => p.stock < 15)
       .sort((a, b) => a.stock - b.stock);
   }, [products]);
 
@@ -32,23 +82,63 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers 
 
   return (
     <div className="space-y-6">
+      {/* Filtro de Período */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
+        <div className="flex items-center gap-3 ml-2">
+          <Calendar size={18} className="text-red-600" />
+          <h2 className="text-xs font-black uppercase tracking-widest text-gray-500">Período de Análise</h2>
+        </div>
+        <div className="flex bg-gray-50 p-1 rounded-2xl w-full sm:w-auto">
+          {[
+            { id: 'TODAY', label: 'Hoje' },
+            { id: 'YESTERDAY', label: 'Ontem' },
+            { id: 'WEEK', label: '7 Dias' },
+            { id: 'MONTH', label: '30 Dias' },
+            { id: 'ALL', label: 'Tudo' }
+          ].map(p => (
+            <button
+              key={p.id}
+              onClick={() => setPeriod(p.id as Period)}
+              className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-tighter transition-all ${
+                period === p.id ? 'bg-red-600 text-white shadow-lg shadow-red-100' : 'text-gray-400 hover:text-red-600'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <MetricCard label="Faturamento Hoje" value={metrics.sales} change="+12%" isPositive={true} icon={<DollarSign size={18} />} />
-        <MetricCard label="Ticket Médio" value={metrics.ticket} change="+5%" isPositive={true} icon={<TrendingUp size={18} />} />
-        <MetricCard label="Vendas Total" value={metrics.count} change="Live" isPositive={true} icon={<Activity size={18} />} />
-        <MetricCard label="Atendimento" value="18 min" change="-2m" isPositive={true} icon={<Clock size={18} />} />
+        <MetricCard label="Faturamento" value={metrics.sales} change={period === 'TODAY' ? "Hoje" : "Período"} isPositive={true} icon={<DollarSign size={18} />} />
+        <MetricCard label="Ticket Médio" value={metrics.ticket} change="Média" isPositive={true} icon={<TrendingUp size={18} />} />
+        <MetricCard label="Vendas Total" value={metrics.count} change="Qtd" isPositive={true} icon={<Activity size={18} />} />
+        <MetricCard label="Atendimento" value="18 min" change="Média" isPositive={true} icon={<Clock size={18} />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-           <h2 className="text-lg font-black mb-8">Fluxo Financeiro</h2>
+           <div className="flex items-center justify-between mb-8">
+              <h2 className="text-lg font-black">Fluxo Financeiro</h2>
+              <span className="text-[10px] font-black uppercase text-red-600 bg-red-50 px-3 py-1 rounded-full">Visualização: {period}</span>
+           </div>
            <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={[{n: '12h', v: 400}, {n: '14h', v: 900}, {n: '18h', v: 2200}, {n: '20h', v: 3800}]}>
-                  <Area type="monotone" dataKey="v" stroke="#dc2626" fill="#fef2f2" strokeWidth={3} />
-                  <XAxis dataKey="n" hide />
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#dc2626" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                  <Area type="monotone" dataKey="v" stroke="#dc2626" fillOpacity={1} fill="url(#colorValue)" strokeWidth={3} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 700, fill: '#9ca3af'}} />
                   <YAxis hide />
-                  <Tooltip />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 800, fontSize: '12px' }}
+                    formatter={(value: number) => [`R$ ${value.toFixed(2)}`, 'Vendas']}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
            </div>
@@ -73,7 +163,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers 
              </div>
           </div>
           
-          {/* DINAMIC STOCK ALERT SYSTEM */}
           {mainAlert ? (
             <div className="bg-red-600 p-6 rounded-3xl text-white shadow-xl shadow-red-100 relative overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
                <div className="relative z-10">
