@@ -4,7 +4,7 @@ import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, C
 // @ts-ignore
 import { initializeApp } from "firebase/app";
 // @ts-ignore
-import { getFirestore, doc, onSnapshot, setDoc, collection, updateDoc, deleteDoc, query, orderBy } from "firebase/firestore";
+import { getFirestore, doc, onSnapshot, setDoc, collection, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch } from "firebase/firestore";
 
 import { AppSection, Table, TableStatus, OrderStatus, Product, Transaction, Customer, OrderItem, PaymentMethod, Printer, Connection, User, UserRole } from './types.ts';
 import { NAVIGATION_ITEMS, MOCK_PRODUCTS, INITIAL_USERS, ROLE_PERMISSIONS } from './constants.tsx';
@@ -79,6 +79,7 @@ const App: React.FC = () => {
     const unsubProds = onSnapshot(collection(db, COLL_PRODUCTS), (snap) => {
       const list: Product[] = [];
       snap.forEach(d => list.push(d.data() as Product));
+      // Se a nuvem estiver vazia, usamos os Mocks, mas mantemos o estado pronto para migração
       setProducts(list.length > 0 ? list : MOCK_PRODUCTS);
     });
 
@@ -122,7 +123,26 @@ const App: React.FC = () => {
   const handleSaveProduct = async (product: Product) => {
     setIsSyncing(true);
     try {
-      await setDoc(doc(db, COLL_PRODUCTS, product.id), sanitize(product));
+      // MIGRACAO AUTOMATICA: Se a nuvem estiver vazia (estamos usando MOCK_PRODUCTS)
+      // Precisamos persistir todo o cardápio antes de salvar a alteração individual
+      const snap = await getDocs(collection(db, COLL_PRODUCTS));
+      if (snap.empty) {
+        console.log("Iniciando migração de cardápio para nuvem...");
+        const batch = writeBatch(db);
+        MOCK_PRODUCTS.forEach(p => {
+          const ref = doc(db, COLL_PRODUCTS, p.id);
+          // Se for o produto que estamos salvando agora, usamos os dados atualizados
+          if (p.id === product.id) {
+            batch.set(ref, sanitize(product));
+          } else {
+            batch.set(ref, sanitize(p));
+          }
+        });
+        await batch.commit();
+      } else {
+        // Fluxo normal se já houver dados na nuvem
+        await setDoc(doc(db, COLL_PRODUCTS, product.id), sanitize(product));
+      }
     } catch (e) {
       console.error("Erro ao salvar produto:", e);
     } finally {
@@ -133,7 +153,19 @@ const App: React.FC = () => {
   const handleDeleteProduct = async (productId: string) => {
     setIsSyncing(true);
     try {
-      await deleteDoc(doc(db, COLL_PRODUCTS, productId));
+      // Se deletar algo enquanto estiver em modo MOCK, migra o restante primeiro
+      const snap = await getDocs(collection(db, COLL_PRODUCTS));
+      if (snap.empty) {
+        const batch = writeBatch(db);
+        MOCK_PRODUCTS.forEach(p => {
+          if (p.id !== productId) {
+            batch.set(doc(db, COLL_PRODUCTS, p.id), sanitize(p));
+          }
+        });
+        await batch.commit();
+      } else {
+        await deleteDoc(doc(db, COLL_PRODUCTS, productId));
+      }
     } catch (e) {
       console.error("Erro ao excluir produto:", e);
     } finally {

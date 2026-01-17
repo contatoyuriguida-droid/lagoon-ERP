@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { 
   AlertCircle, 
@@ -14,11 +15,14 @@ import {
   Loader2, 
   Pencil, 
   Filter,
-  ChevronRight
+  ChevronRight,
+  CloudUpload,
+  Check
 } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import { GoogleGenAI, Type } from "@google/genai";
 import { Product } from '../types.ts';
+import { MOCK_PRODUCTS } from '../constants.tsx';
 
 interface InventoryProps {
   products: Product[];
@@ -31,6 +35,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, onSaveProduct, onDelete
   const [showAIModal, setShowAIModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [menuText, setMenuText] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("TODOS");
   
@@ -41,6 +46,9 @@ const Inventory: React.FC<InventoryProps> = ({ products, onSaveProduct, onDelete
     category: 'Geral', 
     stock: 50 
   });
+
+  // Detecta se estamos rodando em modo MOCK (local)
+  const isUsingMocks = products.length === MOCK_PRODUCTS.length && products.every((p, i) => p.id === MOCK_PRODUCTS[i].id);
 
   // Extrair categorias únicas para o filtro e para o select
   const categories = useMemo(() => {
@@ -73,6 +81,21 @@ const Inventory: React.FC<InventoryProps> = ({ products, onSaveProduct, onDelete
       category: product.category,
       stock: product.stock
     });
+  };
+
+  const handleManualSync = async () => {
+    if (confirm("Deseja sincronizar o cardápio padrão com a nuvem agora? Isso garantirá que todos os itens apareçam para todos os terminais.")) {
+      setIsMigrating(true);
+      try {
+        // Salva o primeiro produto para disparar a lógica de migração automática do App.tsx
+        await onSaveProduct(products[0]);
+        alert("Sincronização concluída! Seu cardápio agora está 100% na nuvem.");
+      } catch (e) {
+        alert("Erro ao sincronizar.");
+      } finally {
+        setIsMigrating(false);
+      }
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -155,6 +178,28 @@ const Inventory: React.FC<InventoryProps> = ({ products, onSaveProduct, onDelete
 
   return (
     <div className="space-y-8 pb-20">
+      
+      {/* Alerta de Sincronismo Pendente */}
+      {isUsingMocks && (
+        <div className="bg-red-600 p-6 rounded-[32px] text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl shadow-red-100 animate-in slide-in-from-top-4 duration-500">
+           <div className="flex items-center gap-4 text-center md:text-left">
+              <div className="p-3 bg-white/20 rounded-2xl"><CloudUpload className="animate-bounce" /></div>
+              <div>
+                 <h3 className="text-sm font-black uppercase tracking-widest leading-none mb-1">Cardápio em Modo Local</h3>
+                 <p className="text-[10px] font-medium opacity-80 uppercase tracking-tighter">O cardápio padrão ainda não foi persistido na nuvem.</p>
+              </div>
+           </div>
+           <button 
+            onClick={handleManualSync}
+            disabled={isMigrating}
+            className="px-8 py-3 bg-white text-red-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center gap-2"
+           >
+             {isMigrating ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+             {isMigrating ? 'SINCRONIZANDO...' : 'Sincronizar Tudo na Nuvem'}
+           </button>
+        </div>
+      )}
+
       {/* Alertas e Ações */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-red-50 p-6 rounded-3xl border border-red-100 flex items-center gap-4">
