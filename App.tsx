@@ -15,6 +15,7 @@ import Inventory from './pages/Inventory.tsx';
 import CRM from './pages/CRM.tsx';
 import Settings from './pages/Settings.tsx';
 import ArchitectInfo from './pages/ArchitectInfo.tsx';
+import UsersPage from './pages/Users.tsx';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBci24rNuL9-cFlLomJa6UzMPj8SM-YJ-g",
@@ -79,7 +80,6 @@ const App: React.FC = () => {
     const unsubProds = onSnapshot(collection(db, COLL_PRODUCTS), (snap) => {
       const list: Product[] = [];
       snap.forEach(d => list.push(d.data() as Product));
-      // Se houver dados na nuvem, usamos eles. Se estiver VAZIO, usamos os mocks.
       setProducts(list.length > 0 ? list : MOCK_PRODUCTS);
     });
 
@@ -120,7 +120,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Função para migrar TUDO do cardápio padrão para a nuvem
   const handleMigrateAll = async () => {
     setIsSyncing(true);
     try {
@@ -130,7 +129,6 @@ const App: React.FC = () => {
         batch.set(ref, sanitize(p));
       });
       await batch.commit();
-      console.log("Migração total concluída.");
     } catch (e) {
       console.error("Erro na migração total:", e);
     } finally {
@@ -141,11 +139,8 @@ const App: React.FC = () => {
   const handleSaveProduct = async (product: Product) => {
     setIsSyncing(true);
     try {
-      // Se estamos salvando um produto e detectamos que a nuvem está quase vazia (ex: só o polvo)
-      // é melhor garantir que o resto do cardápio suba junto para o usuário não "perder" a visão.
       const snap = await getDocs(collection(db, COLL_PRODUCTS));
       if (snap.size < 5) {
-        console.log("Detectado cardápio incompleto na nuvem. Sincronizando mix total...");
         const batch = writeBatch(db);
         MOCK_PRODUCTS.forEach(p => {
           const ref = doc(db, COLL_PRODUCTS, p.id);
@@ -161,6 +156,17 @@ const App: React.FC = () => {
       }
     } catch (e) {
       console.error("Erro ao salvar produto:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSaveUsers = async (newUsers: User[]) => {
+    setIsSyncing(true);
+    try {
+      await setDoc(doc(db, DOC_SETTINGS), { users: newUsers }, { merge: true });
+    } catch (e) {
+      console.error("Erro ao salvar usuários:", e);
     } finally {
       setIsSyncing(false);
     }
@@ -440,6 +446,7 @@ const App: React.FC = () => {
               onMigrateAll={handleMigrateAll}
             />}
             {activeSection === AppSection.CRM && <CRM customers={customers} setCustomers={(newCust) => {}} />}
+            {activeSection === AppSection.USERS && <UsersPage users={users} onSaveUsers={handleSaveUsers} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
             {activeSection === AppSection.ARCHITECT && <ArchitectInfo />}
         </main>
