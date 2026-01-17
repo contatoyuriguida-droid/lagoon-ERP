@@ -1,7 +1,8 @@
 
 import React, { useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { TrendingUp, DollarSign, Clock, Printer, Wifi, ShieldCheck, Zap, Activity, AlertCircle, CheckCircle2, ArrowRight, Calendar, X, Loader2, Package } from 'lucide-react';
+// Added RefreshCw to imports
+import { TrendingUp, DollarSign, Clock, Printer, Wifi, ShieldCheck, Zap, Activity, AlertCircle, CheckCircle2, ArrowRight, Calendar, X, Loader2, Package, CloudLightning, RefreshCw } from 'lucide-react';
 import { Transaction, Product, Printer as PrinterType } from '../types.ts';
 
 interface DashboardProps {
@@ -9,14 +10,16 @@ interface DashboardProps {
   products: Product[];
   printers: PrinterType[];
   onUpdateProduct: (product: Product) => Promise<void>;
+  onMigrateAll: () => Promise<void>;
 }
 
 type Period = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'ALL';
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers, onUpdateProduct }) => {
+const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers, onUpdateProduct, onMigrateAll }) => {
   const [period, setPeriod] = useState<Period>('TODAY');
   const [showRestockModal, setShowRestockModal] = useState(false);
   const [isProcessingRestock, setIsProcessingRestock] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [restockQty, setRestockQty] = useState<number>(0);
 
   // Lógica de Filtragem de Transações
@@ -75,6 +78,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers,
     }
   }, [filteredTransactions, period]);
 
+  // ALERTA DE RESGATE: Se tiver menos de 10 itens, o cardápio sumiu.
+  const needsRescue = products.length < 10 && products.length > 0;
+
   const lowStockItems = useMemo(() => {
     return products
       .filter(p => p.stock < 15)
@@ -101,8 +107,42 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers,
     }
   };
 
+  const triggerRescue = async () => {
+    setIsMigrating(true);
+    try {
+      await onMigrateAll();
+      alert("Cardápio recuperado com sucesso!");
+    } catch (e) {
+      alert("Erro ao recuperar.");
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      
+      {/* ALERTA DE RESGATE DE CARDÁPIO (BOTÃO DE EMERGÊNCIA) */}
+      {needsRescue && (
+        <div className="bg-red-600 p-6 rounded-[32px] text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl shadow-red-200 animate-in slide-in-from-top-4 duration-500">
+           <div className="flex items-center gap-5 text-center md:text-left">
+              <div className="p-4 bg-white/20 rounded-2xl"><CloudLightning size={28} className="animate-pulse" /></div>
+              <div>
+                 <h3 className="text-lg font-black uppercase tracking-tight leading-none mb-1">Resgate de Cardápio Necessário</h3>
+                 <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest">Detectamos que seu estoque em nuvem está incompleto (Apenas {products.length} itens).</p>
+              </div>
+           </div>
+           <button 
+            onClick={triggerRescue}
+            disabled={isMigrating}
+            className="w-full md:w-auto px-10 py-4 bg-white text-red-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl flex items-center justify-center gap-3"
+           >
+             {isMigrating ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+             {isMigrating ? 'RECUPERANDO...' : 'RECUPERAR MIX COMPLETO AGORA'}
+           </button>
+        </div>
+      )}
+
       {/* Filtro de Período */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
         <div className="flex items-center gap-3 ml-2">
@@ -232,7 +272,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers,
       {/* MODAL DE REPOSIÇÃO RÁPIDA */}
       {showRestockModal && mainAlert && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-md p-6">
-           <div className="bg-white rounded-[40px] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+           <div className="bg-white rounded-[40px] w-full max-sm p-10 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
               <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
                  <Package size={32} />
               </div>

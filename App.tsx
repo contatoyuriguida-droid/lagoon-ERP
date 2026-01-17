@@ -79,7 +79,7 @@ const App: React.FC = () => {
     const unsubProds = onSnapshot(collection(db, COLL_PRODUCTS), (snap) => {
       const list: Product[] = [];
       snap.forEach(d => list.push(d.data() as Product));
-      // Se a nuvem estiver vazia, usamos os Mocks, mas mantemos o estado pronto para migração
+      // Se houver dados na nuvem, usamos eles. Se estiver VAZIO, usamos os mocks.
       setProducts(list.length > 0 ? list : MOCK_PRODUCTS);
     });
 
@@ -120,18 +120,35 @@ const App: React.FC = () => {
     }
   };
 
+  // Função para migrar TUDO do cardápio padrão para a nuvem
+  const handleMigrateAll = async () => {
+    setIsSyncing(true);
+    try {
+      const batch = writeBatch(db);
+      MOCK_PRODUCTS.forEach(p => {
+        const ref = doc(db, COLL_PRODUCTS, p.id);
+        batch.set(ref, sanitize(p));
+      });
+      await batch.commit();
+      console.log("Migração total concluída.");
+    } catch (e) {
+      console.error("Erro na migração total:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleSaveProduct = async (product: Product) => {
     setIsSyncing(true);
     try {
-      // MIGRACAO AUTOMATICA: Se a nuvem estiver vazia (estamos usando MOCK_PRODUCTS)
-      // Precisamos persistir todo o cardápio antes de salvar a alteração individual
+      // Se estamos salvando um produto e detectamos que a nuvem está quase vazia (ex: só o polvo)
+      // é melhor garantir que o resto do cardápio suba junto para o usuário não "perder" a visão.
       const snap = await getDocs(collection(db, COLL_PRODUCTS));
-      if (snap.empty) {
-        console.log("Iniciando migração de cardápio para nuvem...");
+      if (snap.size < 5) {
+        console.log("Detectado cardápio incompleto na nuvem. Sincronizando mix total...");
         const batch = writeBatch(db);
         MOCK_PRODUCTS.forEach(p => {
           const ref = doc(db, COLL_PRODUCTS, p.id);
-          // Se for o produto que estamos salvando agora, usamos os dados atualizados
           if (p.id === product.id) {
             batch.set(ref, sanitize(product));
           } else {
@@ -140,7 +157,6 @@ const App: React.FC = () => {
         });
         await batch.commit();
       } else {
-        // Fluxo normal se já houver dados na nuvem
         await setDoc(doc(db, COLL_PRODUCTS, product.id), sanitize(product));
       }
     } catch (e) {
@@ -153,19 +169,7 @@ const App: React.FC = () => {
   const handleDeleteProduct = async (productId: string) => {
     setIsSyncing(true);
     try {
-      // Se deletar algo enquanto estiver em modo MOCK, migra o restante primeiro
-      const snap = await getDocs(collection(db, COLL_PRODUCTS));
-      if (snap.empty) {
-        const batch = writeBatch(db);
-        MOCK_PRODUCTS.forEach(p => {
-          if (p.id !== productId) {
-            batch.set(doc(db, COLL_PRODUCTS, p.id), sanitize(p));
-          }
-        });
-        await batch.commit();
-      } else {
-        await deleteDoc(doc(db, COLL_PRODUCTS, productId));
-      }
+      await deleteDoc(doc(db, COLL_PRODUCTS, productId));
     } catch (e) {
       console.error("Erro ao excluir produto:", e);
     } finally {
@@ -414,6 +418,7 @@ const App: React.FC = () => {
                 products={products} 
                 printers={printers} 
                 onUpdateProduct={handleSaveProduct} 
+                onMigrateAll={handleMigrateAll}
               />
             )}
             {activeSection === AppSection.POS && <POS 
@@ -432,6 +437,7 @@ const App: React.FC = () => {
               products={products} 
               onSaveProduct={handleSaveProduct}
               onDeleteProduct={handleDeleteProduct}
+              onMigrateAll={handleMigrateAll}
             />}
             {activeSection === AppSection.CRM && <CRM customers={customers} setCustomers={(newCust) => {}} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
