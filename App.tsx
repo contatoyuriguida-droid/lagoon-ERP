@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Bell, Menu, X, LogOut, ChevronRight, Lock, Cloud, RefreshCw, Volume2, Check, Printer as PrinterIcon, User as UserIcon, ShieldCheck, ShieldAlert } from 'lucide-react';
 // @ts-ignore
@@ -375,7 +376,14 @@ const App: React.FC = () => {
         </header>
 
         <main className="flex-1 overflow-auto p-3 lg:p-10">
-            {activeSection === AppSection.DASHBOARD && <Dashboard transactions={transactions} products={products} printers={printers} />}
+            {activeSection === AppSection.DASHBOARD && (
+              <Dashboard 
+                transactions={transactions} 
+                products={products} 
+                printers={printers} 
+                onUpdateProduct={handleSaveProduct} 
+              />
+            )}
             {activeSection === AppSection.POS && <POS 
               currentUser={currentUser} 
               tables={statusTables} 

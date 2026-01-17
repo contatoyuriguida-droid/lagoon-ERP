@@ -1,18 +1,23 @@
+
 import React, { useMemo, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { TrendingUp, DollarSign, Clock, Printer, Wifi, ShieldCheck, Zap, Activity, AlertCircle, CheckCircle2, ArrowRight, Calendar } from 'lucide-react';
+import { TrendingUp, DollarSign, Clock, Printer, Wifi, ShieldCheck, Zap, Activity, AlertCircle, CheckCircle2, ArrowRight, Calendar, X, Loader2, Package } from 'lucide-react';
 import { Transaction, Product, Printer as PrinterType } from '../types.ts';
 
 interface DashboardProps {
   transactions: Transaction[];
   products: Product[];
   printers: PrinterType[];
+  onUpdateProduct: (product: Product) => Promise<void>;
 }
 
 type Period = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH' | 'ALL';
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers }) => {
+const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers, onUpdateProduct }) => {
   const [period, setPeriod] = useState<Period>('TODAY');
+  const [showRestockModal, setShowRestockModal] = useState(false);
+  const [isProcessingRestock, setIsProcessingRestock] = useState(false);
+  const [restockQty, setRestockQty] = useState<number>(0);
 
   // Lógica de Filtragem de Transações
   const filteredTransactions = useMemo(() => {
@@ -54,15 +59,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers 
   // Preparação de dados para o gráfico baseado no filtro
   const chartData = useMemo(() => {
     if (period === 'TODAY' || period === 'YESTERDAY') {
-      // Agrupar por hora
       const hours = Array.from({ length: 24 }, (_, i) => ({ name: `${i}h`, v: 0 }));
       filteredTransactions.forEach(t => {
         const hour = new Date(t.timestamp).getHours();
         hours[hour].v += t.amount;
       });
-      return hours.filter((h, i) => i >= 8 && i <= 23); // Focar no horário de operação
+      return hours.filter((h, i) => i >= 8 && i <= 23);
     } else {
-      // Agrupar por dia
       const days: Record<string, number> = {};
       filteredTransactions.forEach(t => {
         const date = new Date(t.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -79,6 +82,24 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers 
   }, [products]);
 
   const mainAlert = lowStockItems[0];
+
+  const handleRestock = async () => {
+    if (!mainAlert || restockQty <= 0) return;
+    setIsProcessingRestock(true);
+    try {
+      const updatedProduct: Product = {
+        ...mainAlert,
+        stock: mainAlert.stock + restockQty
+      };
+      await onUpdateProduct(updatedProduct);
+      setShowRestockModal(false);
+      setRestockQty(0);
+    } catch (e) {
+      console.error("Erro na reposição:", e);
+    } finally {
+      setIsProcessingRestock(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -186,7 +207,10 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers 
                     </div>
                   )}
 
-                  <button className="mt-6 w-full py-3 bg-white text-red-600 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors shadow-lg">
+                  <button 
+                    onClick={() => setShowRestockModal(true)}
+                    className="mt-6 w-full py-3 bg-white text-red-600 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors shadow-lg active:scale-95"
+                  >
                     Repor agora <ArrowRight size={12} />
                   </button>
                </div>
@@ -204,6 +228,61 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, products, printers 
           )}
         </div>
       </div>
+
+      {/* MODAL DE REPOSIÇÃO RÁPIDA */}
+      {showRestockModal && mainAlert && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-md p-6">
+           <div className="bg-white rounded-[40px] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+              <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                 <Package size={32} />
+              </div>
+              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Reposição Expressa</h3>
+              <h2 className="text-2xl font-black text-gray-900 uppercase leading-none mb-6">{mainAlert.name}</h2>
+              
+              <div className="bg-gray-50 p-6 rounded-3xl mb-8">
+                 <p className="text-[10px] font-black text-gray-400 uppercase mb-4">Quantidade a Adicionar</p>
+                 <div className="flex items-center justify-center gap-6">
+                    <button 
+                      onClick={() => setRestockQty(Math.max(0, restockQty - 1))}
+                      className="w-10 h-10 bg-white border border-gray-100 text-gray-400 rounded-xl font-black text-xl hover:text-red-600 transition-colors"
+                    >
+                      -
+                    </button>
+                    <input 
+                      autoFocus
+                      type="number" 
+                      value={restockQty} 
+                      onChange={(e) => setRestockQty(Number(e.target.value))}
+                      className="bg-transparent text-3xl font-black text-red-600 text-center w-20 outline-none" 
+                    />
+                    <button 
+                      onClick={() => setRestockQty(restockQty + 1)}
+                      className="w-10 h-10 bg-white border border-gray-100 text-gray-400 rounded-xl font-black text-xl hover:text-red-600 transition-colors"
+                    >
+                      +
+                    </button>
+                 </div>
+              </div>
+
+              <div className="flex gap-4">
+                 <button 
+                  onClick={handleRestock}
+                  disabled={isProcessingRestock || restockQty <= 0}
+                  className="flex-1 py-4 bg-red-600 text-white font-black rounded-2xl shadow-xl shadow-red-100 text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                 >
+                   {isProcessingRestock ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                   {isProcessingRestock ? 'PROCESSANDO...' : 'CONFIRMAR'}
+                 </button>
+                 <button 
+                  onClick={() => { setShowRestockModal(false); setRestockQty(0); }}
+                  className="px-6 py-4 bg-gray-100 text-gray-400 font-bold rounded-2xl text-[10px] uppercase tracking-widest active:scale-95 transition-all"
+                 >
+                   CANCELAR
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
