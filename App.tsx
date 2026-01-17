@@ -34,10 +34,6 @@ const COLL_CUSTOMERS = "lagoon_customers";
 const COLL_TRANSACTIONS = "lagoon_transactions";
 const DOC_SETTINGS = "lagoon_config/global";
 
-/**
- * Função utilitária para remover campos 'undefined' antes de enviar ao Firestore.
- * Firestore lança erro se encontrar undefined.
- */
 const sanitize = (obj: any) => {
   const cleaned = { ...obj };
   Object.keys(cleaned).forEach(key => {
@@ -68,11 +64,9 @@ const App: React.FC = () => {
   const [printers, setPrinters] = useState<Printer[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
 
-  // Referência para o estado das mesas para uso em funções de callback
   const tablesRef = useRef<Table[]>([]);
   useEffect(() => { tablesRef.current = statusTables; }, [statusTables]);
 
-  // Monitoramento Granular
   useEffect(() => {
     const unsubTables = onSnapshot(collection(db, COLL_TABLES), (snap) => {
       const list: Table[] = [];
@@ -116,10 +110,31 @@ const App: React.FC = () => {
   const saveTable = async (table: Table) => {
     setIsSyncing(true);
     try {
-      // Importante: sanitize remove os campos 'undefined' que causavam o erro
       await setDoc(doc(db, COLL_TABLES, table.id.toString()), sanitize(table));
     } catch (e) {
       console.error("Erro ao salvar mesa:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSaveProduct = async (product: Product) => {
+    setIsSyncing(true);
+    try {
+      await setDoc(doc(db, COLL_PRODUCTS, product.id), sanitize(product));
+    } catch (e) {
+      console.error("Erro ao salvar produto:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    setIsSyncing(true);
+    try {
+      await deleteDoc(doc(db, COLL_PRODUCTS, productId));
+    } catch (e) {
+      console.error("Erro ao excluir produto:", e);
     } finally {
       setIsSyncing(false);
     }
@@ -143,7 +158,6 @@ const App: React.FC = () => {
       lastUpdate: Date.now()
     };
 
-    // Optimistic Update local para resposta instantânea (Liso!)
     setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
   }, []);
@@ -174,7 +188,6 @@ const App: React.FC = () => {
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
 
-    // 1. Registrar Transação com Sanitize (Evita o erro de undefined no customerId)
     const txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newTx: Transaction = {
       id: txId, 
@@ -186,11 +199,10 @@ const App: React.FC = () => {
       paymentMethod: method, 
       itemsCount: itemIds.length, 
       timestamp: Date.now(), 
-      customerId: table.customerId || undefined // Sanitize vai remover se for undefined
+      customerId: table.customerId || undefined
     };
     await setDoc(doc(db, COLL_TRANSACTIONS, txId), sanitize(newTx));
 
-    // 2. Atualizar Cliente
     if (table.customerId) {
       const customer = customers.find(c => c.id === table.customerId);
       if (customer) {
@@ -203,7 +215,6 @@ const App: React.FC = () => {
       }
     }
 
-    // 3. Atualizar a Mesa
     const remaining = table.orderItems.filter(i => !itemIds.includes(i.id));
     const isNowAvailable = remaining.length === 0;
     
@@ -377,12 +388,12 @@ const App: React.FC = () => {
               onAssignCustomer={assignCustomerToTable}
             />}
             {activeSection === AppSection.KDS && <KDS tables={statusTables} onMarkReady={markItemAsReady} />}
-            {activeSection === AppSection.INVENTORY && <Inventory products={products} setProducts={(newProds) => {
-               // Implementação de persistência para produtos se necessário
-            }} />}
-            {activeSection === AppSection.CRM && <CRM customers={customers} setCustomers={(newCust) => {
-               // Implementação de persistência para clientes se necessário
-            }} />}
+            {activeSection === AppSection.INVENTORY && <Inventory 
+              products={products} 
+              onSaveProduct={handleSaveProduct}
+              onDeleteProduct={handleDeleteProduct}
+            />}
+            {activeSection === AppSection.CRM && <CRM customers={customers} setCustomers={(newCust) => {}} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
             {activeSection === AppSection.ARCHITECT && <ArchitectInfo />}
         </main>
