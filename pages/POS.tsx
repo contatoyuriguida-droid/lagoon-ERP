@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, LayoutGrid, List, ChevronRight, CheckCircle2, Trash2, UserPlus, UserCheck, Minus, Hash } from 'lucide-react';
 import { Table, TableStatus, Product, Customer, PaymentMethod, User, UserRole } from '../types.ts';
 
@@ -20,6 +20,13 @@ interface Toast {
   message: string;
 }
 
+// Interface para controlar a sessão de cliques no mesmo produto
+interface ClickBurst {
+  productId: string;
+  count: number;
+  timerId: number;
+}
+
 const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onAddItems, onRemoveItem, onFinalize, onAddTable, onAssignCustomer }) => {
   const [activeTab, setActiveTab] = useState<'TABLES' | 'COMANDAS'>('TABLES');
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
@@ -35,6 +42,9 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   // Estados para Quantidade
   const [qtySelector, setQtySelector] = useState<{ product: Product } | null>(null);
   const [selectedQty, setSelectedQty] = useState(1);
+
+  // Estado para o contador de sessão de clique (Burst)
+  const [burst, setBurst] = useState<ClickBurst | null>(null);
 
   const currentTable = useMemo(() => tables.find(t => t.id === selectedTableId), [tables, selectedTableId]);
   const linkedCustomer = useMemo(() => customers.find(c => c.id === currentTable?.customerId), [customers, currentTable]);
@@ -67,10 +77,31 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   };
 
   const handleQuickAdd = (product: Product, e: React.MouseEvent) => {
-    e.stopPropagation(); // Evita abrir o seletor de quantidade
+    e.stopPropagation(); 
     if (!selectedTableId) return;
+
     onAddItems(selectedTableId, product, 1);
-    showToast(`+1 ${product.name}`);
+
+    // Lógica do Burst (Contador Progressivo)
+    setBurst(prev => {
+      // Limpa timer anterior se houver
+      if (prev?.timerId) clearTimeout(prev.timerId);
+
+      const newCount = (prev?.productId === product.id) ? prev.count + 1 : 1;
+      
+      // Define novo timer de 10 segundos para resetar o contador
+      const newTimerId = window.setTimeout(() => {
+        setBurst(null);
+      }, 10000);
+
+      return {
+        productId: product.id,
+        count: newCount,
+        timerId: newTimerId
+      };
+    });
+
+    showToast(`Lançamento Efetuado`);
   };
 
   const handleOpenQtySelector = (product: Product) => {
@@ -81,8 +112,9 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   const confirmAddWithQty = () => {
     if (!selectedTableId || !qtySelector) return;
     onAddItems(selectedTableId, qtySelector.product, selectedQty);
-    showToast(`+${selectedQty} ${qtySelector.product.name}`);
+    showToast(`Adicionados ${selectedQty} itens`);
     setQtySelector(null);
+    setBurst(null); // Reseta burst ao usar seletor manual
   };
 
   const handleFinalize = () => {
@@ -99,7 +131,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   return (
     <div className="flex flex-col h-full space-y-4 lg:space-y-6 relative">
       
-      {/* Toast Notifications Layer */}
+      {/* Camada de Notificação Central */}
       <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 pointer-events-none">
         {toasts.map(t => (
           <div key={t.id} className="bg-red-600 text-white px-6 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-2xl shadow-red-200 animate-in fade-in slide-in-from-top-4 duration-300 flex items-center gap-2">
@@ -179,8 +211,15 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                        <button 
                          key={p.id} 
                          onClick={() => handleOpenQtySelector(p)} 
-                         className="w-full bg-white border border-gray-100 rounded-2xl hover:border-red-300 active:scale-[0.99] flex justify-between items-center text-left shadow-sm transition-all group overflow-hidden"
+                         className="w-full bg-white border border-gray-100 rounded-2xl hover:border-red-300 active:scale-[0.99] flex justify-between items-center text-left shadow-sm transition-all group overflow-hidden relative"
                        >
+                         {/* Badge de Burst (Feedback Progressivo) */}
+                         {burst?.productId === p.id && (
+                            <div className="absolute top-2 right-16 px-3 py-1 bg-red-600 text-white text-[10px] font-black rounded-full shadow-lg animate-bounce z-20">
+                               ADICIONOU {burst.count}
+                            </div>
+                         )}
+
                          <div className="flex items-center gap-4 p-4 flex-1">
                             <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-red-600 group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
                                <Hash size={18} />
@@ -268,7 +307,6 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                 </div>
               ) : (
                 <div className="p-4 space-y-4">
-                   {/* Vínculo Opcional de Cliente */}
                    <div className="px-1">
                       {linkedCustomer ? (
                         <div className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-2">
@@ -293,7 +331,24 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                        <div key={item.id} className="p-4 bg-white rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm relative overflow-hidden group animate-in fade-in slide-in-from-left-2">
                           {item.status === 'READY' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-green-500" />}
                           <div className="flex items-center gap-4">
-                             <span className="w-10 h-10 flex items-center justify-center bg-red-50 text-red-600 rounded-xl text-xs font-black">{item.quantity}x</span>
+                             <div className="flex items-center bg-red-50 rounded-xl overflow-hidden h-10">
+                                <button 
+                                  onClick={() => onRemoveItem(currentTable.id, item.id)}
+                                  className="px-3 h-full hover:bg-red-600 hover:text-white text-red-600 transition-all active:scale-90"
+                                >
+                                   <Minus size={14} />
+                                </button>
+                                <span className="w-10 h-full flex items-center justify-center text-xs font-black text-red-600 bg-white/50">x{item.quantity}</span>
+                                <button 
+                                  onClick={() => {
+                                    const prod = products.find(p => p.id === item.productId);
+                                    if(prod) onAddItems(currentTable.id, prod, 1);
+                                  }}
+                                  className="px-3 h-full hover:bg-red-600 hover:text-white text-red-600 transition-all active:scale-90"
+                                >
+                                   <Plus size={14} />
+                                </button>
+                             </div>
                              <div>
                                 <p className="font-black text-[13px] text-gray-800 uppercase leading-none mb-1">{item.name}</p>
                                 <div className="flex items-center gap-2">
@@ -306,15 +361,6 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                           </div>
                           <div className="flex items-center gap-4">
                             <p className="font-black text-sm text-gray-900">R$ {(item.price * item.quantity).toFixed(2)}</p>
-                            <button 
-                              onClick={() => {
-                                onRemoveItem(currentTable.id, item.id);
-                                showToast(`Removido: ${item.name}`);
-                              }} 
-                              className="p-2 text-gray-300 hover:text-red-600 active:scale-90 transition-all"
-                            >
-                              <Trash2 size={18} />
-                            </button>
                           </div>
                        </div>
                      ))}
@@ -331,7 +377,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
 
             <div className="p-6 bg-white border-t border-gray-100 space-y-3 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] sticky bottom-0">
                {isAddingItems ? (
-                 <button onClick={() => {setIsAddingItems(false); setSearchTerm("");}} className="w-full py-5 bg-red-600 text-white font-black rounded-2xl uppercase text-xs tracking-[0.2em] shadow-xl shadow-red-200 active:scale-95 transition-all">CONCLUIR LANÇAMENTO</button>
+                 <button onClick={() => {setIsAddingItems(false); setSearchTerm(""); setBurst(null);}} className="w-full py-5 bg-red-600 text-white font-black rounded-2xl uppercase text-xs tracking-[0.2em] shadow-xl shadow-red-200 active:scale-95 transition-all">CONCLUIR LANÇAMENTO</button>
                ) : isSelectingCustomer ? (
                  <button onClick={() => setIsSelectingCustomer(false)} className="w-full py-5 bg-gray-100 text-gray-400 font-black rounded-2xl uppercase text-xs tracking-[0.2em] active:scale-95 transition-all">VOLTAR PARA RESUMO</button>
                ) : isClosingBill ? (
@@ -379,7 +425,6 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                     </button>
                  </div>
 
-                 {/* Botões de Atalho de Quantidade */}
                  <div className="grid grid-cols-4 gap-2">
                     {[2, 3, 4, 5, 6, 8, 10, 12].map(num => (
                       <button 

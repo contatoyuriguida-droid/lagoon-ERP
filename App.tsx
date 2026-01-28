@@ -187,17 +187,37 @@ const App: React.FC = () => {
     const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
 
-    const newItem: OrderItem = {
-      id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      productId: product.id, name: product.name, price: product.price, quantity: qty,
-      status: OrderStatus.PREPARING, paid: false, timestamp: Date.now()
-    };
+    // Lógica de Agrupamento: Procura se o produto já está na lista e ainda não saiu da cozinha
+    const existingIndex = table.orderItems.findIndex(oi => 
+      oi.productId === product.id && 
+      (oi.status === OrderStatus.PREPARING || oi.status === OrderStatus.PENDING)
+    );
+
+    let updatedItems = [...table.orderItems];
+
+    if (existingIndex > -1) {
+      // Incrementa quantidade do item existente
+      const existing = updatedItems[existingIndex];
+      updatedItems[existingIndex] = {
+        ...existing,
+        quantity: existing.quantity + qty,
+        timestamp: Date.now() // Atualiza timestamp para o KDS ver que houve alteração
+      };
+    } else {
+      // Adiciona novo item
+      const newItem: OrderItem = {
+        id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        productId: product.id, name: product.name, price: product.price, quantity: qty,
+        status: OrderStatus.PREPARING, paid: false, timestamp: Date.now()
+      };
+      updatedItems.push(newItem);
+    }
 
     const updatedTable: Table = {
       ...table,
       status: TableStatus.OCCUPIED,
       comandaId: comandaId || table.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
-      orderItems: [...table.orderItems, newItem],
+      orderItems: updatedItems,
       lastUpdate: Date.now()
     };
 
@@ -209,14 +229,27 @@ const App: React.FC = () => {
     const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
 
-    const remainingItems = table.orderItems.filter(oi => oi.id !== itemId);
-    const isEmpty = remainingItems.length === 0;
+    let updatedItems = [...table.orderItems];
+    const itemIndex = updatedItems.findIndex(oi => oi.id === itemId);
+    
+    if (itemIndex > -1) {
+      const item = updatedItems[itemIndex];
+      if (item.quantity > 1) {
+        // Apenas decrementa
+        updatedItems[itemIndex] = { ...item, quantity: item.quantity - 1 };
+      } else {
+        // Remove totalmente
+        updatedItems.splice(itemIndex, 1);
+      }
+    }
+
+    const isEmpty = updatedItems.length === 0;
 
     const updatedTable: Table = {
       ...table,
       status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
       comandaId: isEmpty ? "" : table.comandaId,
-      orderItems: remainingItems,
+      orderItems: updatedItems,
       lastUpdate: Date.now()
     };
 
