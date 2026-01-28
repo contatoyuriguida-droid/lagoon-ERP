@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
-import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, LayoutGrid, List, ChevronRight, CheckCircle2, Trash2, UserPlus, UserCheck } from 'lucide-react';
+import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, LayoutGrid, List, ChevronRight, CheckCircle2, Trash2, UserPlus, UserCheck, Minus, Hash } from 'lucide-react';
 import { Table, TableStatus, Product, Customer, PaymentMethod, User, UserRole } from '../types.ts';
 
 interface POSProps {
@@ -30,6 +31,10 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   const [searchTerm, setSearchTerm] = useState("");
   const [custSearchTerm, setCustSearchTerm] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
+  
+  // Estados para Quantidade
+  const [qtySelector, setQtySelector] = useState<{ product: Product } | null>(null);
+  const [selectedQty, setSelectedQty] = useState(1);
 
   const currentTable = useMemo(() => tables.find(t => t.id === selectedTableId), [tables, selectedTableId]);
   const linkedCustomer = useMemo(() => customers.find(c => c.id === currentTable?.customerId), [customers, currentTable]);
@@ -61,10 +66,23 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
     }, 2000);
   };
 
-  const handleAddItem = (product: Product) => {
+  const handleQuickAdd = (product: Product, e: React.MouseEvent) => {
+    e.stopPropagation(); // Evita abrir o seletor de quantidade
     if (!selectedTableId) return;
     onAddItems(selectedTableId, product, 1);
     showToast(`+1 ${product.name}`);
+  };
+
+  const handleOpenQtySelector = (product: Product) => {
+    setQtySelector({ product });
+    setSelectedQty(1);
+  };
+
+  const confirmAddWithQty = () => {
+    if (!selectedTableId || !qtySelector) return;
+    onAddItems(selectedTableId, qtySelector.product, selectedQty);
+    showToast(`+${selectedQty} ${qtySelector.product.name}`);
+    setQtySelector(null);
   };
 
   const handleFinalize = () => {
@@ -158,17 +176,31 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                    </div>
                    <div className="grid grid-cols-1 gap-2">
                      {filteredProducts.map(p => (
-                       <button key={p.id} onClick={() => handleAddItem(p)} className="w-full p-4 bg-white border border-gray-100 rounded-2xl hover:border-red-300 active:scale-[0.98] flex justify-between items-center text-left shadow-sm transition-all group">
-                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-red-600 group-hover:bg-red-600 group-hover:text-white transition-colors">
-                               <Plus size={18} />
+                       <button 
+                         key={p.id} 
+                         onClick={() => handleOpenQtySelector(p)} 
+                         className="w-full bg-white border border-gray-100 rounded-2xl hover:border-red-300 active:scale-[0.99] flex justify-between items-center text-left shadow-sm transition-all group overflow-hidden"
+                       >
+                         <div className="flex items-center gap-4 p-4 flex-1">
+                            <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-red-600 group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
+                               <Hash size={18} />
                             </div>
                             <div>
                                <p className="font-black text-sm text-gray-800 leading-tight uppercase">{p.name}</p>
-                               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{p.category}</p>
+                               <div className="flex items-center gap-2">
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{p.category}</p>
+                                  <span className="text-[10px] text-red-600 font-black">R$ {p.price.toFixed(2)}</span>
+                               </div>
                             </div>
                          </div>
-                         <p className="text-red-600 font-black text-sm">R$ {p.price.toFixed(2)}</p>
+                         
+                         {/* Botão de Adição Rápida (+1) */}
+                         <div 
+                           onClick={(e) => handleQuickAdd(p, e)}
+                           className="h-full px-6 py-6 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center border-l border-gray-50"
+                         >
+                            <Plus size={20} strokeWidth={3} />
+                         </div>
                        </button>
                      ))}
                    </div>
@@ -319,6 +351,63 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* SELETOR DE QUANTIDADE EXPRESSO (MODAL OVERLAY) */}
+      {qtySelector && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-6">
+           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setQtySelector(null)} />
+           <div className="relative bg-white rounded-[40px] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Definir Quantidade</p>
+              <h3 className="text-xl font-black text-gray-900 uppercase leading-tight mb-8">{qtySelector.product.name}</h3>
+              
+              <div className="bg-gray-50 p-8 rounded-[32px] mb-8">
+                 <div className="flex items-center justify-center gap-8 mb-8">
+                    <button 
+                      onClick={() => setSelectedQty(Math.max(1, selectedQty - 1))}
+                      className="w-12 h-12 bg-white text-gray-400 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all"
+                    >
+                      <Minus size={24} />
+                    </button>
+                    <span className="text-5xl font-black text-red-600 w-20">{selectedQty}</span>
+                    <button 
+                      onClick={() => setSelectedQty(selectedQty + 1)}
+                      className="w-12 h-12 bg-white text-red-600 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-all"
+                    >
+                      <Plus size={24} />
+                    </button>
+                 </div>
+
+                 {/* Botões de Atalho de Quantidade */}
+                 <div className="grid grid-cols-4 gap-2">
+                    {[2, 3, 4, 5, 6, 8, 10, 12].map(num => (
+                      <button 
+                        key={num} 
+                        onClick={() => setSelectedQty(num)}
+                        className={`py-3 rounded-xl font-black text-[11px] transition-all ${selectedQty === num ? 'bg-red-600 text-white shadow-lg' : 'bg-white text-gray-400 border border-gray-100'}`}
+                      >
+                        {num}
+                      </button>
+                    ))}
+                 </div>
+              </div>
+
+              <div className="flex gap-3">
+                 <button 
+                   onClick={confirmAddWithQty}
+                   className="flex-1 py-5 bg-red-600 text-white font-black rounded-2xl shadow-xl shadow-red-100 uppercase text-xs tracking-widest active:scale-95 transition-all"
+                 >
+                   LANÇAR AGORA
+                 </button>
+                 <button 
+                   onClick={() => setQtySelector(null)}
+                   className="px-6 py-5 bg-gray-100 text-gray-400 font-bold rounded-2xl text-[10px] uppercase"
+                 >
+                   CANCELAR
+                 </button>
+              </div>
+           </div>
         </div>
       )}
     </div>
