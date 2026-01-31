@@ -1,6 +1,29 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Users, Plus, X, DollarSign, ArrowLeftRight, CreditCard, Search, Smartphone, Banknote, ShoppingBag, Wallet, Printer as PrinterIcon, LayoutGrid, List, ChevronRight, CheckCircle2, Trash2, UserPlus, UserCheck, Minus, Hash } from 'lucide-react';
+import { 
+  Users, 
+  Plus, 
+  X, 
+  DollarSign, 
+  ArrowLeftRight, 
+  CreditCard, 
+  Search, 
+  Smartphone, 
+  Banknote, 
+  ShoppingBag, 
+  Wallet, 
+  Printer as PrinterIcon, 
+  LayoutGrid, 
+  List, 
+  ChevronRight, 
+  CheckCircle2, 
+  Trash2, 
+  UserPlus, 
+  UserCheck, 
+  Minus, 
+  Hash,
+  Zap
+} from 'lucide-react';
 import { Table, TableStatus, Product, Customer, PaymentMethod, User, UserRole } from '../types.ts';
 
 interface POSProps {
@@ -20,7 +43,6 @@ interface Toast {
   message: string;
 }
 
-// Interface para controlar a sessão de cliques no mesmo produto
 interface ClickBurst {
   productId: string;
   count: number;
@@ -39,11 +61,8 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   const [custSearchTerm, setCustSearchTerm] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   
-  // Estados para Quantidade
   const [qtySelector, setQtySelector] = useState<{ product: Product } | null>(null);
   const [selectedQty, setSelectedQty] = useState(1);
-
-  // Estado para o contador de sessão de clique (Burst)
   const [burst, setBurst] = useState<ClickBurst | null>(null);
 
   const currentTable = useMemo(() => tables.find(t => t.id === selectedTableId), [tables, selectedTableId]);
@@ -76,29 +95,23 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
     }, 2000);
   };
 
+  const handleOpenCounterSale = () => {
+    // Balcão utiliza a "Mesa Virtual 0"
+    setSelectedTableId(0);
+    setIsAddingItems(true);
+  };
+
   const handleQuickAdd = (product: Product, e: React.MouseEvent) => {
     e.stopPropagation(); 
-    if (!selectedTableId) return;
+    if (selectedTableId === null) return;
 
     onAddItems(selectedTableId, product, 1);
 
-    // Lógica do Burst (Contador Progressivo)
     setBurst(prev => {
-      // Limpa timer anterior se houver
       if (prev?.timerId) clearTimeout(prev.timerId);
-
       const newCount = (prev?.productId === product.id) ? prev.count + 1 : 1;
-      
-      // Define novo timer de 10 segundos para resetar o contador
-      const newTimerId = window.setTimeout(() => {
-        setBurst(null);
-      }, 10000);
-
-      return {
-        productId: product.id,
-        count: newCount,
-        timerId: newTimerId
-      };
+      const newTimerId = window.setTimeout(() => setBurst(null), 10000);
+      return { productId: product.id, count: newCount, timerId: newTimerId };
     });
 
     showToast(`Lançamento Efetuado`);
@@ -110,11 +123,11 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   };
 
   const confirmAddWithQty = () => {
-    if (!selectedTableId || !qtySelector) return;
+    if (selectedTableId === null || !qtySelector) return;
     onAddItems(selectedTableId, qtySelector.product, selectedQty);
     showToast(`Adicionados ${selectedQty} itens`);
     setQtySelector(null);
-    setBurst(null); // Reseta burst ao usar seletor manual
+    setBurst(null); 
   };
 
   const handleFinalize = () => {
@@ -149,15 +162,28 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
             <List size={14} /> Ativas
           </button>
         </div>
-        {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER) && (
-          <button onClick={onAddTable} className="flex items-center justify-center gap-2 px-6 py-3 bg-white text-red-600 border-2 border-red-50 rounded-2xl font-black text-[10px] uppercase shadow-sm active:scale-95 transition-all">
-            <Plus size={16} /> Nova Mesa
+        
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button 
+            onClick={handleOpenCounterSale}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:scale-105 active:scale-95 transition-all"
+          >
+            <Zap size={16} className="text-yellow-400 fill-yellow-400" /> Venda Balcão
           </button>
-        )}
+          
+          {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.MANAGER) && (
+            <button onClick={onAddTable} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white text-red-600 border-2 border-red-50 rounded-2xl font-black text-[10px] uppercase shadow-sm active:scale-95 transition-all">
+              <Plus size={16} /> Nova Mesa
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-2 lg:gap-3">
-        {tables.filter(t => activeTab === 'TABLES' || t.status === TableStatus.OCCUPIED).map(table => (
+        {tables
+          .filter(t => t.id !== 0) // Esconde a mesa virtual do mapa
+          .filter(t => activeTab === 'TABLES' || t.status === TableStatus.OCCUPIED)
+          .map(table => (
           <button
             key={table.id}
             onClick={() => setSelectedTableId(table.id)}
@@ -181,15 +207,28 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
         <div className="fixed inset-0 z-[100] flex justify-end">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if(!isAddingItems && !isSelectingCustomer) setSelectedTableId(null); }} />
           <div className="relative w-full max-w-lg bg-white h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
-            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+            
+            {/* Header do Atendimento */}
+            <div className={`px-6 py-5 border-b border-gray-100 flex items-center justify-between sticky top-0 z-10 ${currentTable.id === 0 ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-red-600 text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-lg shadow-red-100">{currentTable.id}</div>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl shadow-lg ${currentTable.id === 0 ? 'bg-white text-gray-900' : 'bg-red-600 text-white shadow-red-100'}`}>
+                  {currentTable.id === 0 ? <Zap size={24} /> : currentTable.id}
+                </div>
                 <div>
-                  <h2 className="text-lg font-black text-gray-900 leading-tight">Mesa {currentTable.id}</h2>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">#{currentTable.comandaId || 'Aguardando'}</p>
+                  <h2 className="text-lg font-black leading-tight">
+                    {currentTable.id === 0 ? 'ATENDIMENTO BALCÃO' : `Mesa ${currentTable.id}`}
+                  </h2>
+                  <p className={`text-[10px] font-bold uppercase tracking-widest ${currentTable.id === 0 ? 'text-gray-400' : 'text-gray-400'}`}>
+                    {currentTable.id === 0 ? 'VENDA DIRETA RÁPIDA' : `#${currentTable.comandaId || 'Aguardando'}`}
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setSelectedTableId(null)} className="p-3 bg-gray-50 hover:bg-red-50 hover:text-red-600 rounded-xl text-gray-400 transition-all"><X size={20} /></button>
+              <button 
+                onClick={() => setSelectedTableId(null)} 
+                className={`p-3 rounded-xl transition-all ${currentTable.id === 0 ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-gray-50 text-gray-400 hover:bg-red-50 hover:text-red-600'}`}
+              >
+                <X size={20} />
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto bg-gray-50/30">
@@ -213,7 +252,6 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                          onClick={() => handleOpenQtySelector(p)} 
                          className="w-full bg-white border border-gray-100 rounded-2xl hover:border-red-300 active:scale-[0.99] flex justify-between items-center text-left shadow-sm transition-all group overflow-hidden relative"
                        >
-                         {/* Badge de Burst (Feedback Progressivo) */}
                          {burst?.productId === p.id && (
                             <div className="absolute top-2 right-16 px-3 py-1 bg-red-600 text-white text-[10px] font-black rounded-full shadow-lg animate-bounce z-20">
                                ADICIONOU {burst.count}
@@ -221,7 +259,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                          )}
 
                          <div className="flex items-center gap-4 p-4 flex-1">
-                            <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-red-600 group-hover:bg-red-50 group-hover:text-red-600 transition-colors">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${currentTable.id === 0 ? 'bg-gray-900 text-white' : 'bg-gray-50 text-red-600 group-hover:bg-red-50'}`}>
                                <Hash size={18} />
                             </div>
                             <div>
@@ -233,10 +271,9 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                             </div>
                          </div>
                          
-                         {/* Botão de Adição Rápida (+1) */}
                          <div 
                            onClick={(e) => handleQuickAdd(p, e)}
-                           className="h-full px-6 py-6 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all flex items-center justify-center border-l border-gray-50"
+                           className={`h-full px-6 py-6 transition-all flex items-center justify-center border-l border-gray-50 ${currentTable.id === 0 ? 'bg-gray-50 text-gray-900 hover:bg-gray-900 hover:text-white' : 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white'}`}
                          >
                             <Plus size={20} strokeWidth={3} />
                          </div>
@@ -272,14 +309,11 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                            <ChevronRight size={16} className="text-gray-200 group-hover:text-red-600" />
                         </button>
                       ))}
-                      {filteredCustomers.length === 0 && (
-                        <div className="py-10 text-center text-gray-400 italic text-xs">Nenhum cliente encontrado.</div>
-                      )}
                    </div>
                 </div>
               ) : isClosingBill ? (
                 <div className="p-6 space-y-6">
-                  <div className="bg-red-600 p-10 rounded-3xl shadow-xl shadow-red-100 text-white text-center relative overflow-hidden">
+                  <div className={`p-10 rounded-3xl shadow-xl text-center relative overflow-hidden ${currentTable.id === 0 ? 'bg-gray-900 text-white shadow-gray-200' : 'bg-red-600 text-white shadow-red-100'}`}>
                     <div className="relative z-10">
                       <p className="text-[10px] font-black uppercase tracking-widest opacity-80 mb-2">Total do Fechamento</p>
                       <p className="text-5xl font-black">R$ {totalBill.toFixed(2)}</p>
@@ -288,10 +322,10 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                     <div className="absolute -right-6 -bottom-6 opacity-10 rotate-12"><DollarSign size={120} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <PaymentBtnLarge active={paymentMethod === PaymentMethod.PIX} onClick={() => setPaymentMethod(PaymentMethod.PIX)} label="PIX" icon={<Smartphone size={24} />} />
-                    <PaymentBtnLarge active={paymentMethod === PaymentMethod.CREDIT} onClick={() => setPaymentMethod(PaymentMethod.CREDIT)} label="CRÉDITO" icon={<CreditCard size={24} />} />
-                    <PaymentBtnLarge active={paymentMethod === PaymentMethod.DEBIT} onClick={() => setPaymentMethod(PaymentMethod.DEBIT)} label="DÉBITO" icon={<Wallet size={24} />} />
-                    <PaymentBtnLarge active={paymentMethod === PaymentMethod.CASH} onClick={() => setPaymentMethod(PaymentMethod.CASH)} label="DINHEIRO" icon={<Banknote size={24} />} />
+                    <PaymentBtnLarge active={paymentMethod === PaymentMethod.PIX} onClick={() => setPaymentMethod(PaymentMethod.PIX)} label="PIX" icon={<Smartphone size={24} />} isCounter={currentTable.id === 0} />
+                    <PaymentBtnLarge active={paymentMethod === PaymentMethod.CREDIT} onClick={() => setPaymentMethod(PaymentMethod.CREDIT)} label="CRÉDITO" icon={<CreditCard size={24} />} isCounter={currentTable.id === 0} />
+                    <PaymentBtnLarge active={paymentMethod === PaymentMethod.DEBIT} onClick={() => setPaymentMethod(PaymentMethod.DEBIT)} label="DÉBITO" icon={<Wallet size={24} />} isCounter={currentTable.id === 0} />
+                    <PaymentBtnLarge active={paymentMethod === PaymentMethod.CASH} onClick={() => setPaymentMethod(PaymentMethod.CASH)} label="DINHEIRO" icon={<Banknote size={24} />} isCounter={currentTable.id === 0} />
                   </div>
                   {paymentMethod === PaymentMethod.CASH && (
                     <div className="space-y-4 animate-in slide-in-from-top-4">
@@ -331,20 +365,20 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                        <div key={item.id} className="p-4 bg-white rounded-2xl border border-gray-100 flex justify-between items-center shadow-sm relative overflow-hidden group animate-in fade-in slide-in-from-left-2">
                           {item.status === 'READY' && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-green-500" />}
                           <div className="flex items-center gap-4">
-                             <div className="flex items-center bg-red-50 rounded-xl overflow-hidden h-10">
+                             <div className={`flex items-center rounded-xl overflow-hidden h-10 ${currentTable.id === 0 ? 'bg-gray-100' : 'bg-red-50'}`}>
                                 <button 
                                   onClick={() => onRemoveItem(currentTable.id, item.id)}
-                                  className="px-3 h-full hover:bg-red-600 hover:text-white text-red-600 transition-all active:scale-90"
+                                  className={`px-3 h-full transition-all active:scale-90 ${currentTable.id === 0 ? 'hover:bg-gray-900 hover:text-white text-gray-900' : 'hover:bg-red-600 hover:text-white text-red-600'}`}
                                 >
                                    <Minus size={14} />
                                 </button>
-                                <span className="w-10 h-full flex items-center justify-center text-xs font-black text-red-600 bg-white/50">x{item.quantity}</span>
+                                <span className={`w-10 h-full flex items-center justify-center text-xs font-black bg-white/50 ${currentTable.id === 0 ? 'text-gray-900' : 'text-red-600'}`}>x{item.quantity}</span>
                                 <button 
                                   onClick={() => {
                                     const prod = products.find(p => p.id === item.productId);
                                     if(prod) onAddItems(currentTable.id, prod, 1);
                                   }}
-                                  className="px-3 h-full hover:bg-red-600 hover:text-white text-red-600 transition-all active:scale-90"
+                                  className={`px-3 h-full transition-all active:scale-90 ${currentTable.id === 0 ? 'hover:bg-gray-900 hover:text-white text-gray-900' : 'hover:bg-red-600 hover:text-white text-red-600'}`}
                                 >
                                    <Plus size={14} />
                                 </button>
@@ -364,12 +398,6 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                           </div>
                        </div>
                      ))}
-                     {currentTable.orderItems.length === 0 && (
-                       <div className="py-20 flex flex-col items-center opacity-20">
-                          <ShoppingBag size={64} className="mb-4" />
-                          <p className="font-black uppercase tracking-widest text-xs italic">A mesa está vazia</p>
-                       </div>
-                     )}
                    </div>
                 </div>
               )}
@@ -377,20 +405,38 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
 
             <div className="p-6 bg-white border-t border-gray-100 space-y-3 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] sticky bottom-0">
                {isAddingItems ? (
-                 <button onClick={() => {setIsAddingItems(false); setSearchTerm(""); setBurst(null);}} className="w-full py-5 bg-red-600 text-white font-black rounded-2xl uppercase text-xs tracking-[0.2em] shadow-xl shadow-red-200 active:scale-95 transition-all">CONCLUIR LANÇAMENTO</button>
+                 <button 
+                  onClick={() => {setIsAddingItems(false); setSearchTerm(""); setBurst(null);}} 
+                  className={`w-full py-5 text-white font-black rounded-2xl uppercase text-xs tracking-[0.2em] shadow-xl active:scale-95 transition-all ${currentTable.id === 0 ? 'bg-gray-900 shadow-gray-200' : 'bg-red-600 shadow-red-200'}`}
+                 >
+                    CONCLUIR LANÇAMENTO
+                 </button>
                ) : isSelectingCustomer ? (
                  <button onClick={() => setIsSelectingCustomer(false)} className="w-full py-5 bg-gray-100 text-gray-400 font-black rounded-2xl uppercase text-xs tracking-[0.2em] active:scale-95 transition-all">VOLTAR PARA RESUMO</button>
                ) : isClosingBill ? (
                  <div className="flex gap-3">
                     <button onClick={() => setIsClosingBill(false)} className="px-6 py-5 bg-gray-50 text-gray-400 font-black rounded-2xl uppercase text-xs active:scale-95 transition-all"><ArrowLeftRight size={18} /></button>
-                    <button disabled={!paymentMethod || (paymentMethod === PaymentMethod.CASH && parseFloat(amountReceived) < totalBill)} onClick={handleFinalize} className="flex-1 py-5 bg-red-600 text-white font-black rounded-2xl uppercase text-xs tracking-[0.2em] shadow-xl shadow-red-200 disabled:opacity-30 active:scale-95 transition-all">FINALIZAR E RECEBER</button>
+                    <button 
+                      disabled={!paymentMethod || (paymentMethod === PaymentMethod.CASH && parseFloat(amountReceived) < totalBill)} 
+                      onClick={handleFinalize} 
+                      className={`flex-1 py-5 text-white font-black rounded-2xl uppercase text-xs tracking-[0.2em] shadow-xl disabled:opacity-30 active:scale-95 transition-all ${currentTable.id === 0 ? 'bg-gray-900 shadow-gray-200' : 'bg-red-600 shadow-red-200'}`}
+                    >
+                      FINALIZAR E RECEBER
+                    </button>
                  </div>
                ) : (
                  <div className="grid grid-cols-2 gap-4">
-                    <button onClick={() => setIsAddingItems(true)} className="py-5 bg-red-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-red-200 active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <button 
+                      onClick={() => setIsAddingItems(true)} 
+                      className={`py-5 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2 ${currentTable.id === 0 ? 'bg-gray-900 shadow-gray-200' : 'bg-red-600 shadow-red-200'}`}
+                    >
                        <Plus size={18} /> ADICIONAR
                     </button>
-                    <button disabled={totalBill === 0} onClick={() => setIsClosingBill(true)} className="py-5 bg-white border-2 border-red-600 text-red-600 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-red-50 disabled:opacity-30 active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <button 
+                      disabled={totalBill === 0} 
+                      onClick={() => setIsClosingBill(true)} 
+                      className={`py-5 border-2 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg disabled:opacity-30 active:scale-95 transition-all flex items-center justify-center gap-2 ${currentTable.id === 0 ? 'bg-white border-gray-900 text-gray-900 shadow-gray-50' : 'bg-white border-red-600 text-red-600 shadow-red-50'}`}
+                    >
                        <DollarSign size={18} /> FECHAR
                     </button>
                  </div>
@@ -441,7 +487,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
               <div className="flex gap-3">
                  <button 
                    onClick={confirmAddWithQty}
-                   className="flex-1 py-5 bg-red-600 text-white font-black rounded-2xl shadow-xl shadow-red-100 uppercase text-xs tracking-widest active:scale-95 transition-all"
+                   className={`flex-1 py-5 text-white font-black rounded-2xl shadow-xl uppercase text-xs tracking-widest active:scale-95 transition-all ${currentTable?.id === 0 ? 'bg-gray-900 shadow-gray-200' : 'bg-red-600 shadow-red-100'}`}
                  >
                    LANÇAR AGORA
                  </button>
@@ -459,8 +505,15 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   );
 };
 
-const PaymentBtnLarge = ({ active, onClick, label, icon }: any) => (
-  <button onClick={onClick} className={`flex flex-col items-center justify-center gap-3 p-6 rounded-3xl border-2 transition-all ${active ? 'border-red-600 bg-red-600 text-white shadow-xl shadow-red-100 scale-105 z-10' : 'border-gray-50 bg-gray-50 text-gray-400 hover:border-red-100'}`}>
+const PaymentBtnLarge = ({ active, onClick, label, icon, isCounter }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`flex flex-col items-center justify-center gap-3 p-6 rounded-3xl border-2 transition-all ${
+      active 
+        ? isCounter ? 'border-gray-900 bg-gray-900 text-white shadow-xl shadow-gray-100 scale-105 z-10' : 'border-red-600 bg-red-600 text-white shadow-xl shadow-red-100 scale-105 z-10'
+        : 'border-gray-50 bg-gray-50 text-gray-400 hover:border-red-100'
+    }`}
+  >
     <div className={`p-3 rounded-2xl ${active ? 'bg-white/20' : 'bg-white'}`}>{icon}</div>
     <span className="text-[11px] font-black uppercase tracking-widest leading-none">{label}</span>
   </button>

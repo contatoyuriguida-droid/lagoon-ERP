@@ -184,10 +184,22 @@ const App: React.FC = () => {
   };
 
   const addOrderItem = useCallback(async (tableId: number, product: Product, qty: number, comandaId?: string) => {
-    const table = tablesRef.current.find(t => t.id === tableId);
+    let table = tablesRef.current.find(t => t.id === tableId);
+    
+    // Se for balcão (ID 0) e não existir, cria um objeto base
+    if (!table && tableId === 0) {
+      table = {
+        id: 0,
+        status: TableStatus.OCCUPIED,
+        orderItems: [],
+        customerCount: 1,
+        lastUpdate: Date.now(),
+        comandaId: "BALCAO"
+      };
+    }
+
     if (!table) return;
 
-    // Lógica de Agrupamento: Procura se o produto já está na lista e ainda não saiu da cozinha
     const existingIndex = table.orderItems.findIndex(oi => 
       oi.productId === product.id && 
       (oi.status === OrderStatus.PREPARING || oi.status === OrderStatus.PENDING)
@@ -196,15 +208,13 @@ const App: React.FC = () => {
     let updatedItems = [...table.orderItems];
 
     if (existingIndex > -1) {
-      // Incrementa quantidade do item existente
       const existing = updatedItems[existingIndex];
       updatedItems[existingIndex] = {
         ...existing,
         quantity: existing.quantity + qty,
-        timestamp: Date.now() // Atualiza timestamp para o KDS ver que houve alteração
+        timestamp: Date.now()
       };
     } else {
-      // Adiciona novo item
       const newItem: OrderItem = {
         id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
         productId: product.id, name: product.name, price: product.price, quantity: qty,
@@ -216,12 +226,20 @@ const App: React.FC = () => {
     const updatedTable: Table = {
       ...table,
       status: TableStatus.OCCUPIED,
-      comandaId: comandaId || table.comandaId || Math.floor(1000 + Math.random() * 9000).toString(),
+      comandaId: comandaId || table.comandaId || (tableId === 0 ? "BALCAO" : Math.floor(1000 + Math.random() * 9000).toString()),
       orderItems: updatedItems,
       lastUpdate: Date.now()
     };
 
-    setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
+    setTables(prev => {
+      const exists = prev.some(t => t.id === tableId);
+      if (exists) {
+        return prev.map(t => t.id === tableId ? updatedTable : t);
+      } else {
+        return [...prev, updatedTable].sort((a, b) => a.id - b.id);
+      }
+    });
+    
     await saveTable(updatedTable);
   }, []);
 
@@ -235,10 +253,8 @@ const App: React.FC = () => {
     if (itemIndex > -1) {
       const item = updatedItems[itemIndex];
       if (item.quantity > 1) {
-        // Apenas decrementa
         updatedItems[itemIndex] = { ...item, quantity: item.quantity - 1 };
       } else {
-        // Remove totalmente
         updatedItems.splice(itemIndex, 1);
       }
     }
@@ -247,8 +263,8 @@ const App: React.FC = () => {
 
     const updatedTable: Table = {
       ...table,
-      status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
-      comandaId: isEmpty ? "" : table.comandaId,
+      status: isEmpty ? (tableId === 0 ? TableStatus.AVAILABLE : TableStatus.AVAILABLE) : TableStatus.OCCUPIED,
+      comandaId: isEmpty ? (tableId === 0 ? "" : "") : table.comandaId,
       orderItems: updatedItems,
       lastUpdate: Date.now()
     };
@@ -303,6 +319,7 @@ const App: React.FC = () => {
       lastUpdate: Date.now()
     };
 
+    // Se for mesa virtual de balcão (ID 0), após finalizar ela fica limpa
     setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
   }, [customers]);
