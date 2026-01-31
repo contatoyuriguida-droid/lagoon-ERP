@@ -183,6 +183,18 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteTable = useCallback(async (tableId: number) => {
+    if (tableId === 0) return; // Não deleta o balcão virtual
+    setIsSyncing(true);
+    try {
+      await deleteDoc(doc(db, COLL_TABLES, tableId.toString()));
+    } catch (e) {
+      console.error("Erro ao excluir mesa:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
   const addOrderItem = useCallback(async (tableId: number, product: Product, qty: number, comandaId?: string) => {
     let table = tablesRef.current.find(t => t.id === tableId);
     
@@ -263,8 +275,8 @@ const App: React.FC = () => {
 
     const updatedTable: Table = {
       ...table,
-      status: isEmpty ? (tableId === 0 ? TableStatus.AVAILABLE : TableStatus.AVAILABLE) : TableStatus.OCCUPIED,
-      comandaId: isEmpty ? (tableId === 0 ? "" : "") : table.comandaId,
+      status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
+      comandaId: isEmpty ? "" : table.comandaId,
       orderItems: updatedItems,
       lastUpdate: Date.now()
     };
@@ -486,6 +498,7 @@ const App: React.FC = () => {
               onRemoveItem={removeOrderItem} 
               onFinalize={finalizePayment} 
               onAddTable={handleAddNewTable}
+              onDeleteTable={handleDeleteTable}
               onAssignCustomer={assignCustomerToTable}
             />}
             {activeSection === AppSection.KDS && <KDS tables={statusTables} onMarkReady={markItemAsReady} />}

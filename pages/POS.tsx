@@ -35,6 +35,7 @@ interface POSProps {
   onRemoveItem: (tableId: number, itemId: string) => void;
   onFinalize: (tableId: number, itemIds: string[], method: PaymentMethod, amountPaid: number, change: number) => void;
   onAddTable: () => void;
+  onDeleteTable?: (tableId: number) => void;
   onAssignCustomer: (tableId: number, customerId: string | undefined) => void;
 }
 
@@ -49,7 +50,7 @@ interface ClickBurst {
   timerId: number;
 }
 
-const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onAddItems, onRemoveItem, onFinalize, onAddTable, onAssignCustomer }) => {
+const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onAddItems, onRemoveItem, onFinalize, onAddTable, onDeleteTable, onAssignCustomer }) => {
   const [activeTab, setActiveTab] = useState<'TABLES' | 'COMANDAS'>('TABLES');
   const [selectedTableId, setSelectedTableId] = useState<number | null>(null);
   const [isAddingItems, setIsAddingItems] = useState(false);
@@ -159,6 +160,15 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
     setAmountReceived("");
   };
 
+  const handleTableDelete = (e: React.MouseEvent, tableId: number) => {
+    e.stopPropagation();
+    if (!onDeleteTable) return;
+    if (window.confirm(`ATENÇÃO ADM: Deseja excluir definitivamente a Mesa ${tableId} do mapa?`)) {
+      onDeleteTable(tableId);
+      showToast(`Mesa ${tableId} Removida`);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4 lg:space-y-6 relative">
       
@@ -211,6 +221,16 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
                 : 'border-white bg-white hover:border-red-100 shadow-sm text-gray-400'
             }`}
           >
+            {/* BOTÃO EXCLUIR MESA (Somente ADMIN e se estiver livre) */}
+            {currentUser.role === UserRole.ADMIN && table.status === TableStatus.AVAILABLE && (
+              <div 
+                onClick={(e) => handleTableDelete(e, table.id)}
+                className="absolute -top-2 -right-2 w-7 h-7 bg-red-800 text-white rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-all z-20 hover:scale-110 active:scale-90"
+              >
+                 <Trash2 size={12} strokeWidth={3} />
+              </div>
+            )}
+
             <span className={`font-black ${table.id > 99 ? 'text-sm' : 'text-lg'} tracking-tighter`}>{table.id}</span>
             <span className="text-[8px] font-black uppercase opacity-80 truncate max-w-[80%]">
               {table.status === TableStatus.OCCUPIED 
