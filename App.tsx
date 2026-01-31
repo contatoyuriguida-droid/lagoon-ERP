@@ -6,7 +6,7 @@ import { initializeApp } from "firebase/app";
 // @ts-ignore
 import { getFirestore, doc, onSnapshot, setDoc, collection, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch } from "firebase/firestore";
 
-import { AppSection, Table, TableStatus, OrderStatus, Product, Transaction, Customer, OrderItem, PaymentMethod, Printer, Connection, User, UserRole } from './types.ts';
+import { AppSection, Table, TableStatus, OrderStatus, Product, Transaction, Customer, OrderItem, PaymentMethod, Printer, Connection, User, UserRole, CustomerType } from './types.ts';
 import { NAVIGATION_ITEMS, MOCK_PRODUCTS, INITIAL_USERS, ROLE_PERMISSIONS } from './constants.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import POS from './pages/POS.tsx';
@@ -172,6 +172,28 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSaveCustomer = async (customer: Customer) => {
+    setIsSyncing(true);
+    try {
+      await setDoc(doc(db, COLL_CUSTOMERS, customer.id), sanitize(customer));
+    } catch (e) {
+      console.error("Erro ao salvar cliente:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDeleteCustomer = async (id: string) => {
+    setIsSyncing(true);
+    try {
+      await deleteDoc(doc(db, COLL_CUSTOMERS, id));
+    } catch (e) {
+      console.error("Erro ao excluir cliente:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleDeleteProduct = async (productId: string) => {
     setIsSyncing(true);
     try {
@@ -292,6 +314,8 @@ const App: React.FC = () => {
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
 
+    const linkedCustomer = table.customerId ? customers.find(c => c.id === table.customerId) : null;
+
     const txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newTx: Transaction = {
       id: txId, 
@@ -303,20 +327,18 @@ const App: React.FC = () => {
       paymentMethod: method, 
       itemsCount: itemIds.length, 
       timestamp: Date.now(), 
-      customerId: table.customerId || undefined
+      customerId: table.customerId || undefined,
+      customerType: linkedCustomer ? linkedCustomer.type : CustomerType.INDIVIDUAL
     };
     await setDoc(doc(db, COLL_TRANSACTIONS, txId), sanitize(newTx));
 
-    if (table.customerId) {
-      const customer = customers.find(c => c.id === table.customerId);
-      if (customer) {
-        await setDoc(doc(db, COLL_CUSTOMERS, customer.id), sanitize({
-          ...customer,
-          spent: customer.spent + total,
-          points: customer.points + Math.floor(total / 10),
-          lastVisit: new Date().toLocaleDateString('pt-BR')
-        }));
-      }
+    if (linkedCustomer) {
+      await setDoc(doc(db, COLL_CUSTOMERS, linkedCustomer.id), sanitize({
+        ...linkedCustomer,
+        spent: linkedCustomer.spent + total,
+        points: linkedCustomer.points + Math.floor(total / 10),
+        lastVisit: new Date().toLocaleDateString('pt-BR')
+      }));
     }
 
     const remaining = table.orderItems.filter(i => !itemIds.includes(i.id));
@@ -331,7 +353,6 @@ const App: React.FC = () => {
       lastUpdate: Date.now()
     };
 
-    // Se for mesa virtual de balcão (ID 0), após finalizar ela fica limpa
     setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
   }, [customers]);
@@ -485,6 +506,7 @@ const App: React.FC = () => {
                 transactions={transactions} 
                 products={products} 
                 printers={printers} 
+                customers={customers}
                 onUpdateProduct={handleSaveProduct} 
                 onMigrateAll={handleMigrateAll}
               />
@@ -508,7 +530,7 @@ const App: React.FC = () => {
               onDeleteProduct={handleDeleteProduct}
               onMigrateAll={handleMigrateAll}
             />}
-            {activeSection === AppSection.CRM && <CRM customers={customers} setCustomers={(newCust) => {}} />}
+            {activeSection === AppSection.CRM && <CRM customers={customers} onSaveCustomer={handleSaveCustomer} onDeleteCustomer={handleDeleteCustomer} />}
             {activeSection === AppSection.USERS && <UsersPage users={users} onSaveUsers={handleSaveUsers} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}
             {activeSection === AppSection.ARCHITECT && <ArchitectInfo />}

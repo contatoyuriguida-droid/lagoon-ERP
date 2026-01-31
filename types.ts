@@ -28,6 +28,12 @@ export enum UserRole {
   CHEF = 'CHEF'
 }
 
+export enum CustomerType {
+  INDIVIDUAL = 'INDIVIDUAL',
+  HOTEL = 'HOTEL',
+  OPERATOR = 'OPERATOR'
+}
+
 export interface User {
   id: string;
   name: string;
@@ -79,15 +85,19 @@ export interface Transaction {
   itemsCount: number;
   timestamp: number;
   customerId?: string;
+  customerType?: CustomerType; // Origem da venda para o financeiro
 }
 
 export interface Customer {
   id: string;
   name: string;
+  type: CustomerType;
   spent: number;
   points: number;
   lastVisit: string;
   prefs: string[];
+  phone?: string;
+  email?: string;
 }
 
 export interface Printer {
