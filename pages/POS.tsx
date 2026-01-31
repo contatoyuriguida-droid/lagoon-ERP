@@ -65,7 +65,24 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   const [selectedQty, setSelectedQty] = useState(1);
   const [burst, setBurst] = useState<ClickBurst | null>(null);
 
-  const currentTable = useMemo(() => tables.find(t => t.id === selectedTableId), [tables, selectedTableId]);
+  // CORREÇÃO: Fornece uma mesa virtual se o ID for 0 (Balcão) e ela ainda não existir no banco
+  const currentTable = useMemo(() => {
+    if (selectedTableId === null) return null;
+    const table = tables.find(t => t.id === selectedTableId);
+    
+    if (!table && selectedTableId === 0) {
+      return {
+        id: 0,
+        status: TableStatus.OCCUPIED,
+        orderItems: [],
+        customerCount: 1,
+        lastUpdate: Date.now(),
+        comandaId: "BALCAO"
+      } as Table;
+    }
+    return table;
+  }, [tables, selectedTableId]);
+
   const linkedCustomer = useMemo(() => customers.find(c => c.id === currentTable?.customerId), [customers, currentTable]);
 
   const filteredProducts = useMemo(() => {
@@ -96,9 +113,10 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
   };
 
   const handleOpenCounterSale = () => {
-    // Balcão utiliza a "Mesa Virtual 0"
     setSelectedTableId(0);
     setIsAddingItems(true);
+    setIsClosingBill(false);
+    setIsSelectingCustomer(false);
   };
 
   const handleQuickAdd = (product: Product, e: React.MouseEvent) => {
@@ -181,12 +199,12 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
 
       <div className="grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-2 lg:gap-3">
         {tables
-          .filter(t => t.id !== 0) // Esconde a mesa virtual do mapa
+          .filter(t => t.id !== 0) 
           .filter(t => activeTab === 'TABLES' || t.status === TableStatus.OCCUPIED)
           .map(table => (
           <button
             key={table.id}
-            onClick={() => setSelectedTableId(table.id)}
+            onClick={() => { setSelectedTableId(table.id); setIsAddingItems(false); }}
             className={`aspect-square rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-1 group relative ${
               table.status === TableStatus.OCCUPIED 
                 ? 'border-red-600 bg-red-600 text-white shadow-lg shadow-red-200 ring-4 ring-red-50' 
@@ -208,7 +226,6 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => { if(!isAddingItems && !isSelectingCustomer) setSelectedTableId(null); }} />
           <div className="relative w-full max-w-lg bg-white h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
             
-            {/* Header do Atendimento */}
             <div className={`px-6 py-5 border-b border-gray-100 flex items-center justify-between sticky top-0 z-10 ${currentTable.id === 0 ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
               <div className="flex items-center gap-4">
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl shadow-lg ${currentTable.id === 0 ? 'bg-white text-gray-900' : 'bg-red-600 text-white shadow-red-100'}`}>
@@ -450,7 +467,7 @@ const POS: React.FC<POSProps> = ({ currentUser, tables, products, customers, onA
       {qtySelector && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-6">
            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setQtySelector(null)} />
-           <div className="relative bg-white rounded-[40px] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+           <div className="relative bg-white rounded-[40px] w-full max-sm p-10 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Definir Quantidade</p>
               <h3 className="text-xl font-black text-gray-900 uppercase leading-tight mb-8">{qtySelector.product.name}</h3>
               
