@@ -34,7 +34,7 @@ const CRM: React.FC<CRMProps> = ({ customers, onSaveCustomer, onDeleteCustomer }
 
   const filteredCustomers = useMemo(() => {
     return customers.filter(c => 
-      c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (c.name || "").toLowerCase().includes(searchTerm.toLowerCase()) || 
       (c.id && c.id.toLowerCase().includes(searchTerm.toLowerCase()))
     );
   }, [customers, searchTerm]);
@@ -140,9 +140,9 @@ const CRM: React.FC<CRMProps> = ({ customers, onSaveCustomer, onDeleteCustomer }
                   <tr key={c.id} className="hover:bg-red-50/30 transition-colors group">
                     <td className="px-8 py-5">
                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-gray-100 text-gray-400 rounded-xl flex items-center justify-center font-black uppercase text-sm group-hover:bg-red-600 group-hover:text-white transition-all">{c.name[0]}</div>
+                          <div className="w-9 h-9 bg-gray-100 text-gray-400 rounded-xl flex items-center justify-center font-black uppercase text-sm group-hover:bg-red-600 group-hover:text-white transition-all">{c.name ? c.name[0] : 'C'}</div>
                           <div>
-                             <p className="font-black text-gray-800 text-sm leading-none uppercase mb-1">{c.name}</p>
+                             <p className="font-black text-gray-800 text-sm leading-none uppercase mb-1">{c.name || "Sem Nome"}</p>
                              <p className="text-[10px] text-gray-400 font-bold tracking-tight">Visto em {c.lastVisit}</p>
                           </div>
                        </div>
@@ -169,7 +169,6 @@ const CRM: React.FC<CRMProps> = ({ customers, onSaveCustomer, onDeleteCustomer }
         </div>
       </div>
 
-      {/* MODAL NOVO CLIENTE / PARCEIRO */}
       {showAddModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-md p-6">
           <div className="bg-white rounded-[40px] w-full max-w-md p-10 shadow-2xl animate-in zoom-in-95 duration-200">

@@ -32,7 +32,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({ transactions, users
   }, [transactions, dateStart, dateEnd, selectedUser]);
 
   const totalSum = useMemo(() => {
-    return filteredTransactions.reduce((acc, t) => acc + t.amount, 0);
+    return filteredTransactions.reduce((acc, t) => acc + (t.amount || 0), 0);
   }, [filteredTransactions]);
 
   const getMethodIcon = (method: PaymentMethod) => {
@@ -96,7 +96,7 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({ transactions, users
             >
               <option value="ALL">TODOS OPERADORES</option>
               {users.map(u => (
-                <option key={u.id} value={u.id}>{u.name.toUpperCase()}</option>
+                <option key={u.id} value={u.id}>{(u.name || "S/N").toUpperCase()}</option>
               ))}
             </select>
           </div>
@@ -126,21 +126,21 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({ transactions, users
                     <span className="text-[11px] font-black text-gray-600 bg-gray-100 px-3 py-1 rounded-lg">
                       {tx.tableId === 0 ? 'BALCÃO' : `MESA ${tx.tableId}`}
                     </span>
-                    <p className="text-[9px] text-gray-400 font-bold mt-1 ml-1 uppercase">#{tx.comandaId}</p>
+                    <p className="text-[9px] text-gray-400 font-bold mt-1 ml-1 uppercase">#{tx.comandaId || '---'}</p>
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-2">
                       <div className="w-7 h-7 bg-red-600 rounded-lg flex items-center justify-center text-white text-[10px] font-black">
-                        {tx.userName[0]}
+                        {(tx.userName || "U")[0]}
                       </div>
-                      <span className="text-xs font-black text-gray-700 uppercase">{tx.userName}</span>
+                      <span className="text-xs font-black text-gray-700 uppercase">{tx.userName || "Legado"}</span>
                     </div>
                   </td>
                   <td className="px-8 py-5">
                     {getMethodBadge(tx.paymentMethod)}
                   </td>
                   <td className="px-8 py-5 text-right">
-                    <span className="text-sm font-black text-gray-900">R$ {tx.amount.toFixed(2)}</span>
+                    <span className="text-sm font-black text-gray-900">R$ {(tx.amount || 0).toFixed(2)}</span>
                   </td>
                 </tr>
               ))}
@@ -157,7 +157,6 @@ const TransactionsPage: React.FC<TransactionsPageProps> = ({ transactions, users
         </div>
       </div>
 
-      {/* RODAPÉ DE TOTALIZAÇÃO */}
       <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-4xl px-4 z-50">
         <div className="bg-gray-900 text-white p-6 rounded-3xl shadow-2xl flex items-center justify-between border-4 border-white/10 backdrop-blur-md">
           <div className="flex items-center gap-4">

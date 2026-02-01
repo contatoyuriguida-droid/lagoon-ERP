@@ -207,7 +207,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteTable = useCallback(async (tableId: number) => {
-    if (tableId === 0) return; // Não deleta o balcão virtual
+    if (tableId === 0) return;
     setIsSyncing(true);
     try {
       await deleteDoc(doc(db, COLL_TABLES, tableId.toString()));
@@ -306,7 +306,7 @@ const App: React.FC = () => {
       customerId: table.customerId || undefined,
       customerType: linkedCustomer ? linkedCustomer.type : CustomerType.INDIVIDUAL,
       userId: currentUser.id,
-      userName: currentUser.name
+      userName: currentUser.name || "Operador"
     };
     await setDoc(doc(db, COLL_TRANSACTIONS, txId), sanitize(newTx));
 
@@ -469,7 +469,7 @@ const App: React.FC = () => {
                    <p className="text-[12px] lg:text-[14px] font-black text-gray-900 leading-none mb-1">{currentUser.name}</p>
                    <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest text-white ${currentUser.role === UserRole.ADMIN ? 'bg-red-600' : 'bg-blue-600'}`}>{currentUser.role}</div>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-red-600 flex items-center justify-center text-white font-black text-lg lg:text-xl shadow-lg">{currentUser.name[0]}</div>
+                <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl bg-red-600 flex items-center justify-center text-white font-black text-lg lg:text-xl shadow-lg">{currentUser.name ? currentUser.name[0] : 'U'}</div>
                 <button onClick={() => setCurrentUser(null)} className="p-2 lg:p-3 text-gray-400 hover:text-red-600 transition-all"><LogOut size={20} /></button>
              </div>
           </div>
