@@ -16,6 +16,7 @@ import CRM from './pages/CRM.tsx';
 import Settings from './pages/Settings.tsx';
 import ArchitectInfo from './pages/ArchitectInfo.tsx';
 import UsersPage from './pages/Users.tsx';
+import TransactionsPage from './pages/Transactions.tsx';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBci24rNuL9-cFlLomJa6UzMPj8SM-YJ-g",
@@ -219,8 +220,6 @@ const App: React.FC = () => {
 
   const addOrderItem = useCallback(async (tableId: number, product: Product, qty: number, comandaId?: string) => {
     let table = tablesRef.current.find(t => t.id === tableId);
-    
-    // Se for balcão (ID 0) e não existir, cria um objeto base
     if (!table && tableId === 0) {
       table = {
         id: 0,
@@ -231,23 +230,15 @@ const App: React.FC = () => {
         comandaId: "BALCAO"
       };
     }
-
     if (!table) return;
-
     const existingIndex = table.orderItems.findIndex(oi => 
       oi.productId === product.id && 
       (oi.status === OrderStatus.PREPARING || oi.status === OrderStatus.PENDING)
     );
-
     let updatedItems = [...table.orderItems];
-
     if (existingIndex > -1) {
       const existing = updatedItems[existingIndex];
-      updatedItems[existingIndex] = {
-        ...existing,
-        quantity: existing.quantity + qty,
-        timestamp: Date.now()
-      };
+      updatedItems[existingIndex] = { ...existing, quantity: existing.quantity + qty, timestamp: Date.now() };
     } else {
       const newItem: OrderItem = {
         id: `it-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -256,7 +247,6 @@ const App: React.FC = () => {
       };
       updatedItems.push(newItem);
     }
-
     const updatedTable: Table = {
       ...table,
       status: TableStatus.OCCUPIED,
@@ -264,37 +254,25 @@ const App: React.FC = () => {
       orderItems: updatedItems,
       lastUpdate: Date.now()
     };
-
     setTables(prev => {
       const exists = prev.some(t => t.id === tableId);
-      if (exists) {
-        return prev.map(t => t.id === tableId ? updatedTable : t);
-      } else {
-        return [...prev, updatedTable].sort((a, b) => a.id - b.id);
-      }
+      if (exists) return prev.map(t => t.id === tableId ? updatedTable : t);
+      return [...prev, updatedTable].sort((a, b) => a.id - b.id);
     });
-    
     await saveTable(updatedTable);
   }, []);
 
   const removeOrderItem = useCallback(async (tableId: number, itemId: string) => {
     const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
-
     let updatedItems = [...table.orderItems];
     const itemIndex = updatedItems.findIndex(oi => oi.id === itemId);
-    
     if (itemIndex > -1) {
       const item = updatedItems[itemIndex];
-      if (item.quantity > 1) {
-        updatedItems[itemIndex] = { ...item, quantity: item.quantity - 1 };
-      } else {
-        updatedItems.splice(itemIndex, 1);
-      }
+      if (item.quantity > 1) updatedItems[itemIndex] = { ...item, quantity: item.quantity - 1 };
+      else updatedItems.splice(itemIndex, 1);
     }
-
     const isEmpty = updatedItems.length === 0;
-
     const updatedTable: Table = {
       ...table,
       status: isEmpty ? TableStatus.AVAILABLE : TableStatus.OCCUPIED,
@@ -302,18 +280,16 @@ const App: React.FC = () => {
       orderItems: updatedItems,
       lastUpdate: Date.now()
     };
-
     setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
   }, []);
 
   const finalizePayment = useCallback(async (tableId: number, itemIds: string[], method: PaymentMethod, amount: number, change: number) => {
     const table = tablesRef.current.find(t => t.id === tableId);
-    if (!table) return;
+    if (!table || !currentUser) return;
 
     const itemsToPay = table.orderItems.filter(i => itemIds.includes(i.id));
     const total = itemsToPay.reduce((s, i) => s + (i.price * i.quantity), 0);
-
     const linkedCustomer = table.customerId ? customers.find(c => c.id === table.customerId) : null;
 
     const txId = `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
@@ -328,7 +304,9 @@ const App: React.FC = () => {
       itemsCount: itemIds.length, 
       timestamp: Date.now(), 
       customerId: table.customerId || undefined,
-      customerType: linkedCustomer ? linkedCustomer.type : CustomerType.INDIVIDUAL
+      customerType: linkedCustomer ? linkedCustomer.type : CustomerType.INDIVIDUAL,
+      userId: currentUser.id,
+      userName: currentUser.name
     };
     await setDoc(doc(db, COLL_TRANSACTIONS, txId), sanitize(newTx));
 
@@ -355,18 +333,16 @@ const App: React.FC = () => {
 
     setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
-  }, [customers]);
+  }, [customers, currentUser]);
 
   const markItemAsReady = useCallback(async (tableId: number, itemId: string) => {
     const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
-
     const updatedTable: Table = {
       ...table,
       orderItems: table.orderItems.map(oi => oi.id === itemId ? { ...oi, status: OrderStatus.READY } : oi),
       lastUpdate: Date.now()
     };
-
     setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
   }, []);
@@ -374,7 +350,6 @@ const App: React.FC = () => {
   const assignCustomerToTable = useCallback(async (tableId: number, customerId: string | undefined) => {
     const table = tablesRef.current.find(t => t.id === tableId);
     if (!table) return;
-
     const updatedTable: Table = { ...table, customerId, lastUpdate: Date.now() };
     setTables(prev => prev.map(t => t.id === tableId ? updatedTable : t));
     await saveTable(updatedTable);
@@ -502,34 +477,16 @@ const App: React.FC = () => {
 
         <main className="flex-1 overflow-auto p-3 lg:p-10">
             {activeSection === AppSection.DASHBOARD && (
-              <Dashboard 
-                transactions={transactions} 
-                products={products} 
-                printers={printers} 
-                customers={customers}
-                onUpdateProduct={handleSaveProduct} 
-                onMigrateAll={handleMigrateAll}
-              />
+              <Dashboard transactions={transactions} products={products} printers={printers} customers={customers} onUpdateProduct={handleSaveProduct} onMigrateAll={handleMigrateAll} />
             )}
-            {activeSection === AppSection.POS && <POS 
-              currentUser={currentUser} 
-              tables={statusTables} 
-              products={products} 
-              customers={customers}
-              onAddItems={addOrderItem} 
-              onRemoveItem={removeOrderItem} 
-              onFinalize={finalizePayment} 
-              onAddTable={handleAddNewTable}
-              onDeleteTable={handleDeleteTable}
-              onAssignCustomer={assignCustomerToTable}
-            />}
+            {activeSection === AppSection.POS && (
+              <POS currentUser={currentUser} tables={statusTables} products={products} customers={customers} onAddItems={addOrderItem} onRemoveItem={removeOrderItem} onFinalize={finalizePayment} onAddTable={handleAddNewTable} onDeleteTable={handleDeleteTable} onAssignCustomer={assignCustomerToTable} />
+            )}
+            {activeSection === AppSection.TRANSACTIONS && (
+              <TransactionsPage transactions={transactions} users={users} />
+            )}
             {activeSection === AppSection.KDS && <KDS tables={statusTables} onMarkReady={markItemAsReady} />}
-            {activeSection === AppSection.INVENTORY && <Inventory 
-              products={products} 
-              onSaveProduct={handleSaveProduct}
-              onDeleteProduct={handleDeleteProduct}
-              onMigrateAll={handleMigrateAll}
-            />}
+            {activeSection === AppSection.INVENTORY && <Inventory products={products} onSaveProduct={handleSaveProduct} onDeleteProduct={handleDeleteProduct} onMigrateAll={handleMigrateAll} />}
             {activeSection === AppSection.CRM && <CRM customers={customers} onSaveCustomer={handleSaveCustomer} onDeleteCustomer={handleDeleteCustomer} />}
             {activeSection === AppSection.USERS && <UsersPage users={users} onSaveUsers={handleSaveUsers} />}
             {activeSection === AppSection.SETTINGS && <Settings printers={printers} setPrinters={setPrinters} connections={connections} setConnections={setConnections} users={users} setUsers={setUsers} />}

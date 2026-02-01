@@ -85,7 +85,9 @@ export interface Transaction {
   itemsCount: number;
   timestamp: number;
   customerId?: string;
-  customerType?: CustomerType; // Origem da venda para o financeiro
+  customerType?: CustomerType;
+  userId: string; // ID do operador que fechou
+  userName: string; // Nome do operador para consulta rápida
 }
 
 export interface Customer {
@@ -126,5 +128,6 @@ export enum AppSection {
   CRM = 'CRM',
   SETTINGS = 'SETTINGS',
   ARCHITECT = 'ARCHITECT',
-  USERS = 'USERS'
+  USERS = 'USERS',
+  TRANSACTIONS = 'TRANSACTIONS'
 }
